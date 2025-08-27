@@ -2,95 +2,124 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* 45 Days Of Code Design System - FAANG Quality */
 
 @layer base {
   :root {
+    /* Core Brand Colors - Light Mode */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-
+    --foreground: 213 100% 19%;
+    
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
+    --card-foreground: 213 100% 19%;
+    
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --popover-foreground: 213 100% 19%;
+    
+    /* Primary Blue (#002D62) */
+    --primary: 213 100% 19%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Accent Amber (#F5A623) */
+    --accent: 37 91% 55%;
+    --accent-foreground: 213 100% 19%;
+    
+    /* Success Green (#27AE60) */
+    --success: 145 63% 42%;
+    --success-foreground: 0 0% 100%;
+    
+    /* Warning Orange (#F2994A) */
+    --warning: 28 87% 62%;
+    --warning-foreground: 213 100% 19%;
+    
+    /* Error Red (#EB5757) */
+    --destructive: 0 74% 64%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 213 100% 19%;
+    
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 213 100% 19%;
+    
+    --radius: 1rem;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(213 100% 19%), hsl(213 100% 25%));
+    --gradient-accent: linear-gradient(135deg, hsl(37 91% 55%), hsl(37 91% 65%));
+    --gradient-success: linear-gradient(135deg, hsl(145 63% 42%), hsl(145 63% 52%));
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(213 100% 19% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(213 100% 19% / 0.1), 0 2px 4px -2px hsl(213 100% 19% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(213 100% 19% / 0.1), 0 4px 6px -4px hsl(213 100% 19% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(213 100% 19% / 0.1), 0 8px 10px -6px hsl(213 100% 19% / 0.1);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Core Brand Colors - Dark Mode (#0F1720) */
+    --background: 213 40% 9%;
+    --foreground: 0 0% 100%;
+    
+    --card: 213 35% 12%;
+    --card-foreground: 0 0% 100%;
+    
+    --popover: 213 35% 12%;
+    --popover-foreground: 0 0% 100%;
+    
+    /* Primary Blue remains same for dark mode */
+    --primary: 213 100% 19%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Accent Amber for dark mode */
+    --accent: 37 91% 55%;
+    --accent-foreground: 213 40% 9%;
+    
+    /* Success Green for dark mode */
+    --success: 145 63% 42%;
+    --success-foreground: 0 0% 100%;
+    
+    /* Warning Orange for dark mode */
+    --warning: 28 87% 62%;
+    --warning-foreground: 213 40% 9%;
+    
+    /* Error Red for dark mode */
+    --destructive: 0 74% 64%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --secondary: 213 25% 18%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 213 25% 18%;
+    --muted-foreground: 215 20% 65%;
+    
+    --border: 213 25% 18%;
+    --input: 213 25% 18%;
+    --ring: 37 91% 55%;
+    
+    /* Dark mode gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(213 100% 19%), hsl(213 80% 25%));
+    --gradient-accent: linear-gradient(135deg, hsl(37 91% 55%), hsl(37 80% 65%));
+    --gradient-success: linear-gradient(135deg, hsl(145 63% 42%), hsl(145 50% 52%));
+    
+    /* Dark mode shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.1);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.15), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.2), 0 4px 6px -4px hsl(0 0% 0% / 0.15);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.25), 0 8px 10px -6px hsl(0 0% 0% / 0.2);
+  }
+  
+  /* Typography System */
+  .font-heading {
+    font-family: 'Poppins', sans-serif;
+  }
+  
+  .font-body {
+    font-family: 'Inter', sans-serif;
   }
 }
 
@@ -100,6 +129,85 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-body antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer utilities {
+  /* Custom Animation Classes */
+  .animate-fade-up {
+    animation: fadeUp 0.3s ease-out forwards;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out forwards;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out forwards;
+  }
+  
+  /* Hover Effects */
+  .hover-lift {
+    @apply transition-all duration-200 hover:scale-105 hover:-translate-y-1;
+  }
+  
+  /* Gradient Backgrounds */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .bg-gradient-accent {
+    background: var(--gradient-accent);
+  }
+  
+  .bg-gradient-success {
+    background: var(--gradient-success);
+  }
+  
+  /* Custom Shadows */
+  .shadow-elegant {
+    box-shadow: var(--shadow-lg);
+  }
+  
+  .shadow-glow {
+    box-shadow: 0 0 30px hsl(var(--primary) / 0.2);
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

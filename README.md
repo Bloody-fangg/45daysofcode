@@ -1,73 +1,298 @@
-# Welcome to your Lovable project
+# 45 Days Of Code - Amity University
 
-## Project info
+A comprehensive coding challenge platform designed for Amity University students to build consistent coding habits over 45 days.
 
-**URL**: https://lovable.dev/projects/86cf9811-1c7b-431a-aa6e-24246147cf89
+## 🎯 Project Overview
 
-## How can I edit this code?
+The "45 Days Of Code" platform is a modern, production-ready web application that gamifies the learning experience with streak tracking, multiple difficulty levels, and comprehensive progress monitoring.
 
-There are several ways of editing your application.
+### Key Features
 
-**Use Lovable**
+- **Multi-Role System**: Separate dashboards for Students and Admins
+- **Daily Coding Challenges**: Four difficulty levels (Easy, Medium, Hard, Code of Choice)
+- **Streak Tracking**: Visual streak counter with automatic break detection
+- **Progress Monitoring**: Comprehensive analytics and submission tracking
+- **Exam Mode**: Admin-controlled cooldown periods during exams
+- **GitHub Integration**: Link submissions to GitHub repositories
+- **Responsive Design**: Mobile-first, accessible interface
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/86cf9811-1c7b-431a-aa6e-24246147cf89) and start prompting.
+## 🏗️ Architecture
 
-Changes made via Lovable will be committed automatically to this repo.
+### Technology Stack
 
-**Use your preferred IDE**
+- **Frontend**: React 18 + TypeScript + Vite
+- **Styling**: Tailwind CSS with custom design system
+- **Backend**: Firebase (Authentication, Firestore, Storage)
+- **UI Components**: Shadcn/ui with custom variants
+- **State Management**: React Context + Firebase hooks
+- **Routing**: React Router v6
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Design System
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+The application follows a comprehensive design system with:
+- **Colors**: Primary Blue (#002D62), Accent Amber (#F5A623), Success Green (#27AE60)
+- **Typography**: Poppins (headings), Inter (body text)
+- **Components**: Custom button variants, gradient backgrounds, shadow system
+- **Dark Mode**: Default dark theme with light mode toggle
 
-Follow these steps:
+## 🚀 Getting Started
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Prerequisites
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+- Node.js 18+ 
+- npm or yarn
+- Firebase project setup
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Installation
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd 45-days-of-code
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure Firebase**
+   - Update `src/lib/firebase.ts` with your Firebase config
+   - Enable Authentication and Firestore in Firebase Console
+
+4. **Start development server**
+   ```bash
+   npm run dev
+   ```
+
+5. **Access the application**
+   - Student Dashboard: `http://localhost:8080`
+   - Admin Dashboard: Login with `optimusprime79.in@gmail.com`
+
+## 📊 Data Models
+
+### User Document
+```typescript
+interface UserData {
+  uid: string;
+  name: string;
+  enrollment_no: string;
+  email: string;
+  course: string;
+  section: string;
+  semester: string;
+  github_repo_link: string;
+  streak_count: number;
+  streak_breaks: number;
+  disqualified: boolean;
+  attempts: {
+    easy: number;
+    medium: number;
+    hard: number;
+    choice: number;
+  };
+  calendar: Record<string, 'completed' | 'missed' | 'paused'>;
+  created_at: string;
+  updated_at: string;
+  isAdmin: boolean;
+}
 ```
 
-**Edit a file directly in GitHub**
+### Question Document
+```typescript
+interface Question {
+  date: string; // YYYY-MM-DD
+  easy: QuestionDetails;
+  medium: QuestionDetails;
+  hard: QuestionDetails;
+  choice: QuestionDetails;
+}
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+interface QuestionDetails {
+  title: string;
+  description: string;
+  link: string;
+  tags: string[];
+}
+```
 
-**Use GitHub Codespaces**
+### Submission Document
+```typescript
+interface Submission {
+  id: string;
+  student_uid: string;
+  question_date: string;
+  difficulty: 'easy' | 'medium' | 'hard' | 'choice';
+  code_text: string;
+  github_file_link: string;
+  external_problem_link: string;
+  created_at: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+}
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🔧 Business Rules
 
-## What technologies are used for this project?
+### Streak System
+- **Completion**: Submit at least one solution per day to maintain streak
+- **Breaks**: Missing a day increments streak_breaks counter
+- **Disqualification**: 3 streak breaks = automatic disqualification
+- **Recovery**: Admin can manually reset breaks or restore accounts
 
-This project is built with:
+### Exam Cooldown
+- **Activation**: Admin can enable exam mode for date ranges
+- **Effect**: Pauses streak counting, shows exam banner to students
+- **Flexibility**: Configurable whether submissions during cooldown count toward attempts
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Submission Rules
+- **Timing**: One submission per difficulty per day
+- **Validation**: Code and external link required
+- **GitHub**: Optional but encouraged repository integration
+- **Status**: All submissions default to "submitted" status
 
-## How can I deploy this project?
+## 👨‍💻 User Roles
 
-Simply open [Lovable](https://lovable.dev/projects/86cf9811-1c7b-431a-aa6e-24246147cf89) and click on Share -> Publish.
+### Student Role
+- **Dashboard**: View daily questions, track progress, submit solutions
+- **Calendar**: Visual representation of completion status
+- **Profile**: Manage account details and GitHub integration
+- **Statistics**: Track attempts across difficulty levels
 
-## Can I connect a custom domain to my Lovable project?
+### Admin Role  
+- **Question Management**: Assign daily questions for all difficulty levels
+- **Student Oversight**: Monitor progress, manage accounts
+- **Exam Mode**: Control cooldown periods and messaging
+- **Analytics**: View platform statistics and trends
+- **Bulk Operations**: Import/export questions, force-mark days
 
-Yes, you can!
+## 🎨 UI/UX Guidelines
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### Core Principles
+- **Minimal & Clean**: Spacious design with clear information hierarchy
+- **FAANG Quality**: Production-grade interface with smooth animations  
+- **Accessibility**: 4.5:1 contrast ratios, keyboard navigation, ARIA labels
+- **Responsive**: Mobile-first approach with progressive enhancement
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+### Key Components
+- **Hero Buttons**: Gradient backgrounds with hover animations
+- **Progress Indicators**: Visual streak counters and completion bars
+- **Status Badges**: Color-coded difficulty and completion states
+- **Modal Interactions**: Smooth transitions for submission flows
+
+## 🧪 Testing & Validation
+
+### Acceptance Criteria
+
+1. **User Registration**
+   - ✅ Student can create account with all required fields
+   - ✅ Admin email redirects to admin dashboard
+   - ✅ Profile information is properly stored and displayed
+
+2. **Question Assignment**
+   - ✅ Admin can set questions for any date
+   - ✅ Students see questions for current date
+   - ✅ External links open correctly
+
+3. **Submission Flow**
+   - ✅ Student can submit solutions for each difficulty
+   - ✅ Calendar updates immediately on submission
+   - ✅ Streak counter increments correctly
+
+4. **Streak Management**
+   - ✅ Missing day increments streak_breaks
+   - ✅ Warning displays after each break
+   - ✅ Disqualification occurs after 3 breaks
+
+5. **Exam Mode**
+   - ✅ Admin can toggle exam cooldown
+   - ✅ Banner displays to all students
+   - ✅ Streak breaks paused during exam period
+
+### Manual Testing Checklist
+
+- [ ] User can sign up and log in successfully
+- [ ] Admin dashboard accessible only with admin email
+- [ ] Questions can be assigned and retrieved by date
+- [ ] Submissions update calendar and streak properly  
+- [ ] Exam mode affects all student interfaces
+- [ ] GitHub links work correctly
+- [ ] Mobile responsiveness across all screens
+- [ ] Dark/light mode toggle functions
+
+## 📈 Analytics & Monitoring
+
+### Key Metrics
+- **Engagement**: Daily active users, submission rates
+- **Progress**: Streak distribution, completion percentages  
+- **Difficulty**: Attempts per level, success rates
+- **Retention**: User lifecycle, disqualification rates
+
+### Admin Insights
+- Student leaderboards by streak and submissions
+- Daily/weekly submission trends
+- Difficulty level popularity analysis
+- Exam period impact assessment
+
+## 🚀 Deployment
+
+### Production Setup
+
+1. **Build the application**
+   ```bash
+   npm run build
+   ```
+
+2. **Deploy to hosting platform**
+   - Recommended: Vercel, Netlify, or Firebase Hosting
+   - Configure environment variables for production Firebase config
+
+3. **Database Setup**
+   - Enable Firestore security rules
+   - Set up backup and monitoring
+   - Configure user authentication settings
+
+### Environment Variables
+```env
+VITE_FIREBASE_API_KEY=your_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_domain
+VITE_FIREBASE_PROJECT_ID=your_project_id
+# Add other Firebase config as needed
+```
+
+## 🤝 Contributing
+
+### Development Workflow
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+### Code Standards
+- TypeScript strict mode enabled
+- ESLint + Prettier for code formatting
+- Semantic commit messages
+- Component-based architecture
+- Mobile-first responsive design
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For technical support or feature requests:
+- Create an issue in the GitHub repository
+- Contact the development team
+- Check the documentation for common solutions
+
+## 🎉 Acknowledgments
+
+- Amity University for project requirements and guidance
+- Shadcn/ui for the excellent component library
+- Firebase for backend infrastructure
+- The open-source community for inspiration and tools
+
+---
+
+**Built with ❤️ for Amity University students to excel in their coding journey!**
