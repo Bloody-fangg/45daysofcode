@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { authService, ADMIN_EMAIL } from '../lib/firebase/index';
 
-interface UserData {
+export interface UserData {
   uid: string;
   name: string;
   enrollment_no: string;
@@ -21,7 +21,15 @@ interface UserData {
     hard: number;
     choice: number;
   };
+  approved: {
+    easy: number;
+    medium: number;
+    hard: number;
+    choice: number;
+  };
+  violations: number;
   calendar: Record<string, 'completed' | 'missed' | 'paused'>;
+  last_submission: string;
   created_at: string;
   updated_at: string;
   isAdmin: boolean;
@@ -30,6 +38,7 @@ interface UserData {
 interface AuthContextType {
   currentUser: User | null;
   userData: UserData | null;
+  setUserData: (data: UserData | null) => void;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, additionalData: Partial<UserData>) => Promise<void>;
@@ -52,14 +61,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const ADMIN_EMAIL = 'optimusprime79.in@gmail.com';
-
   const fetchUserData = async (user: User) => {
     try {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data() as UserData;
-        setUserData({ ...data, isAdmin: user.email === ADMIN_EMAIL });
+      const data = await authService.getUserData(user.uid);
+      if (data) {
+        setUserData(data);
+      } else {
+        // If no user data exists but user is authenticated, create basic user data
+        const basicUserData: UserData = {
+          uid: user.uid,
+          email: user.email || '',
+          name: user.displayName || '',
+          enrollment_no: '',
+          course: '',
+          section: '',
+          semester: '',
+          github_repo_link: '',
+          streak_count: 0,
+          streak_breaks: 0,
+          disqualified: false,
+          attempts: { easy: 0, medium: 0, hard: 0, choice: 0 },
+          approved: { easy: 0, medium: 0, hard: 0, choice: 0 },
+          violations: 0,
+          calendar: {},
+          last_submission: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          isAdmin: user.email === ADMIN_EMAIL
+        };
+        setUserData(basicUserData);
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -67,39 +97,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signup = async (email: string, password: string, additionalData: Partial<UserData>) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-
-    const userData: UserData = {
-      uid: user.uid,
-      email: user.email!,
-      name: additionalData.name || '',
-      enrollment_no: additionalData.enrollment_no || '',
-      course: additionalData.course || '',
-      section: additionalData.section || '',
-      semester: additionalData.semester || '',
-      github_repo_link: additionalData.github_repo_link || '',
-      streak_count: 0,
-      streak_breaks: 0,
-      disqualified: false,
-      attempts: { easy: 0, medium: 0, hard: 0, choice: 0 },
-      calendar: {},
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      isAdmin: email === ADMIN_EMAIL
-    };
-
-    await setDoc(doc(db, 'users', user.uid), userData);
-    setUserData(userData);
+    try {
+      console.log('AuthContext: Attempting signup with:', email);
+      const userData = await authService.signUp(email, password, additionalData);
+      console.log('AuthContext: Signup successful, userData:', userData);
+      setUserData(userData);
+    } catch (error) {
+      console.error('AuthContext: Signup error:', error);
+      throw error;
+    }
   };
 
   const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    try {
+      console.log('AuthContext: Attempting login with:', email);
+      const user = await authService.signIn(email, password);
+      console.log('AuthContext: Login successful, user:', user.uid);
+    } catch (error) {
+      console.error('AuthContext: Login error:', error);
+      throw error;
+    }
   };
 
   const logout = async () => {
-    await signOut(auth);
-    setUserData(null);
+    try {
+      await authService.signOut();
+      setUserData(null);
+    } catch (error) {
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -119,6 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = {
     currentUser,
     userData,
+    setUserData: (data: UserData | null) => setUserData(data),
     loading,
     login,
     signup,

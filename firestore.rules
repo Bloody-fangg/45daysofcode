@@ -1,0 +1,90 @@
+// Firestore Security Rules for 45 Days of Code Platform
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'amiarchive79.in@gmail.com';
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidUserData() {
+      return request.resource.data.keys().hasAll([
+        'uid', 'name', 'enrollment_no', 'email', 'course', 
+        'section', 'semester', 'streak_count', 'streak_breaks',
+        'disqualified', 'attempts', 'calendar', 'created_at', 'updated_at'
+      ]);
+    }
+    
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read their own data, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own account during signup
+      allow create: if isOwner(userId) && isValidUserData();
+      
+      // Users can update their own profile, admins can update any
+      allow update: if isOwner(userId) || isAdmin();
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+    }
+    
+    // Questions collection rules
+    match /questions/{questionId} {
+      // Anyone authenticated can read questions
+      allow read: if isAuthenticated();
+      
+      // Only admins can create, update, or delete questions
+      allow write: if isAdmin();
+    }
+    
+    // Assignments collection rules
+    match /assignments/{assignmentId} {
+      // Anyone authenticated can read assignments
+      allow read: if isAuthenticated();
+      
+      // Only admins can create, update, or delete assignments
+      allow write: if isAdmin();
+    }
+    
+    // Submissions collection rules
+    match /submissions/{submissionId} {
+      // Users can read their own submissions, admins can read all
+      allow read: if isAuthenticated() && 
+        (resource.data.student_uid == request.auth.uid || isAdmin());
+      
+      // Users can create submissions for themselves
+      allow create: if isAuthenticated() && 
+        request.resource.data.student_uid == request.auth.uid;
+      
+      // Only admins can update submissions (for status changes)
+      allow update: if isAdmin();
+      
+      // Only admins can delete submissions
+      allow delete: if isAdmin();
+    }
+    
+    // Exam cooldown settings
+    match /exam_cooldown/{document} {
+      // Anyone authenticated can read exam settings
+      allow read: if isAuthenticated();
+      
+      // Only admins can modify exam settings
+      allow write: if isAdmin();
+    }
+    
+    // Analytics collection (admin only)
+    match /analytics/{document} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

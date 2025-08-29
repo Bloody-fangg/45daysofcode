@@ -21,20 +21,45 @@ import {
   Save,
   X,
   ArrowLeft,
+  LogOut,
   Flame,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  Code
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
 const ProfilePage = () => {
-  const { userData } = useAuth();
+  const { userData, logout } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+      toast({
+        title: 'Logged out successfully',
+        description: 'See you tomorrow for your next coding challenge!',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Logout failed',
+        description: 'Failed to log out. Please try again.',
+      });
+    }
+  };
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState({
+    name: userData?.name || '',
+    enrollment_no: userData?.enrollment_no || '',
+    course: userData?.course || '',
+    section: userData?.section || '',
+    semester: userData?.semester || '',
     github_repo_link: userData?.github_repo_link || ''
   });
 
@@ -111,14 +136,30 @@ const ProfilePage = () => {
       {/* Header */}
       <header className="border-b bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate(-1)}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
+          <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-heading font-bold">Profile</h1>
               <p className="text-muted-foreground">Manage your account and view your progress</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => navigate(-1)}
+                className="flex items-center gap-1 text-white bg-[#1f41a1] hover:bg-[#1a3790] border-[#1f41a1] hover:border-[#1a3790]"
+              >
+                <Code className="w-4 h-4" />
+                <span>Dashboard</span>
+              </Button>
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleLogout}
+                className="flex items-center gap-1"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -140,9 +181,10 @@ const ProfilePage = () => {
                     variant="outline" 
                     size="sm"
                     onClick={() => setEditMode(!editMode)}
+                    className={editMode ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground border-destructive hover:border-destructive" : "bg-[#7AD1E4] hover:bg-[#7AD1E4]/90 text-black border-[#7AD1E4] hover:border-[#7AD1E4]"}
                   >
                     {editMode ? <X className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
-                    {editMode ? 'Cancel' : 'Edit'}
+                    <span className="ml-1">{editMode ? 'Cancel' : 'Edit'}</span>
                   </Button>
                 </div>
               </CardHeader>
@@ -161,34 +203,68 @@ const ProfilePage = () => {
                 {/* Details Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Enrollment Number</Label>
-                      <p className="font-medium">{userData.enrollment_no}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Course</Label>
-                      <p className="font-medium">{userData.course}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Section</Label>
-                      <p className="font-medium">{userData.section}</p>
-                    </div>
+                    {editMode ? (
+                      <>
+                        <div>
+                          <Label className="text-sm font-medium">Name</Label>
+                          <Input value={editData.name} onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))} />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium">Enrollment Number</Label>
+                          <Input value={editData.enrollment_no} onChange={(e) => setEditData(prev => ({ ...prev, enrollment_no: e.target.value }))} />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium">Course</Label>
+                          <Input value={editData.course} onChange={(e) => setEditData(prev => ({ ...prev, course: e.target.value }))} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Enrollment Number</Label>
+                          <p className="font-medium">{userData.enrollment_no}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Course</Label>
+                          <p className="font-medium">{userData.course}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Section</Label>
+                          <p className="font-medium">{userData.section}</p>
+                        </div>
+                      </>
+                    )}
                   </div>
                   
                   <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Semester</Label>
-                      <p className="font-medium">{userData.semester}</p>
-                    </div>
+                    {editMode ? (
+                      <>
+                        <div>
+                          <Label className="text-sm font-medium">Section</Label>
+                          <Input value={editData.section} onChange={(e) => setEditData(prev => ({ ...prev, section: e.target.value }))} />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium">Semester</Label>
+                          <Input value={editData.semester} onChange={(e) => setEditData(prev => ({ ...prev, semester: e.target.value }))} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <Label className="text-sm font-medium text-muted-foreground">Semester</Label>
+                          <p className="font-medium">{userData.semester}</p>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Member Since</Label>
                       <p className="font-medium">
-                        {format(new Date(userData.created_at), 'MMM dd, yyyy')}
+                        {new Date(userData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </p>
                     </div>
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Account Status</Label>
-                      <Badge variant={userData.disqualified ? "destructive" : "default"}>
+                      <Badge variant={userData.disqualified ? "destructive" : "outline"} className={userData.disqualified ? "" : "bg-[#7AD1E4] hover:bg-[#7AD1E4] text-black border-[#7AD1E4]"}>
                         {userData.disqualified ? "Disqualified" : "Active"}
                       </Badge>
                     </div>
@@ -206,8 +282,10 @@ const ProfilePage = () => {
                         onChange={(e) => setEditData(prev => ({ ...prev, github_repo_link: e.target.value }))}
                       />
                       <div className="flex gap-2">
-                        <Button onClick={handleSaveProfile} size="sm" variant="hero">
-                          <Save className="w-4 h-4 mr-2" />
+                        <Button 
+                          type="submit" 
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600 hover:border-green-700"
+                        >
                           Save Changes
                         </Button>
                       </div>
@@ -218,9 +296,10 @@ const ProfilePage = () => {
                         <Button 
                           variant="outline" 
                           onClick={() => window.open(userData.github_repo_link, '_blank')}
+                          className="bg-white hover:bg-gray-100 text-black border-gray-300"
                         >
-                          <Github className="w-4 h-4 mr-2" />
-                          View Repository
+                          <Github className="w-4 h-4 mr-2 text-black" />
+                          <span className="text-black">View Repository</span>
                         </Button>
                       ) : (
                         <p className="text-muted-foreground italic">No repository linked</p>
@@ -244,12 +323,12 @@ const ProfilePage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {mockCalendarData.map((day) => (
+                  {mockCalendarData.slice(0, 5).map((day) => (
                     <div key={day.date} className="flex items-center justify-between p-3 rounded-lg border">
                       <div className="flex items-center gap-3">
                         {getStatusIcon(day.status)}
                         <div>
-                          <p className="font-medium">{format(new Date(day.date), 'EEEE, MMM dd')}</p>
+                          <p className="font-medium">{new Date(day.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
                           <p className="text-sm text-muted-foreground">
                             {getStatusLabel(day.status)}
                           </p>
@@ -357,21 +436,19 @@ const ProfilePage = () => {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button 
-                  className="w-full" 
-                  variant="outline"
-                  onClick={() => navigate('/')}
+                  className="w-full bg-[#1f41a1] hover:bg-[#1a3790] text-white border-[#1f41a1] hover:border-[#1a3790]"
+                  onClick={() => navigate('/dashboard')}
                 >
                   <Target className="w-4 h-4 mr-2" />
                   Back to Dashboard
                 </Button>
                 {userData.github_repo_link && (
                   <Button 
-                    className="w-full" 
-                    variant="outline"
+                    className="w-full bg-white hover:bg-gray-100 text-black border-gray-300"
                     onClick={() => window.open(userData.github_repo_link, '_blank')}
                   >
-                    <Github className="w-4 h-4 mr-2" />
-                    Open GitHub Repo
+                    <Github className="w-4 h-4 mr-2 text-black" />
+                    <span className="text-black">Open GitHub Repo</span>
                   </Button>
                 )}
               </CardContent>

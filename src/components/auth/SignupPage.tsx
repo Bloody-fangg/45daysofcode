@@ -144,7 +144,9 @@ const SignupPage = () => {
             <Card className="shadow-elegant">
               <CardHeader>
                 <CardTitle className="text-2xl font-heading">Create Your Account</CardTitle>
-                <CardDescription>Fill in your details to get started</CardDescription>
+                <CardDescription>
+                  Fill in your details below to join the 45 Days of Code challenge at Amity University
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">

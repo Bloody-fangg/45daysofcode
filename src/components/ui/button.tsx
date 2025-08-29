@@ -24,6 +24,9 @@ const buttonVariants = cva(
         success: "bg-success text-success-foreground hover:bg-success/90 shadow-lg",
         warning: "bg-warning text-warning-foreground hover:bg-warning/90 shadow-lg",
         glass: "bg-white/10 backdrop-blur-sm border border-white/20 text-white hover:bg-white/20",
+        purple: "bg-purple-600 text-white hover:bg-purple-700 shadow-lg",
+        violet: "bg-violet-600 text-white hover:bg-violet-700 shadow-lg",
+        gold: "bg-amber-400 text-black hover:bg-amber-500 shadow-lg",
       },
       size: {
         default: "h-10 px-4 py-2",

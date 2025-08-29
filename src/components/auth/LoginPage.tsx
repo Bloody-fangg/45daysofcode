@@ -97,7 +97,7 @@ const LoginPage = () => {
             <CardHeader className="text-center space-y-2">
               <CardTitle className="text-2xl font-heading">Sign In</CardTitle>
               <CardDescription>
-                Enter your credentials to access your dashboard
+                Enter your credentials to access the platform
               </CardDescription>
             </CardHeader>
             <CardContent>

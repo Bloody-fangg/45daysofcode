@@ -1,162 +1,632 @@
-import React, { useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { useAuth, type UserData } from '../../contexts/AuthContext';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { Switch } from '../ui/switch';
-import { Badge } from '../ui/badge';
-import { Calendar } from '../ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '../ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  Settings, 
   Users, 
-  Calendar as CalendarIcon, 
-  BookOpen, 
-  LogOut,
-  Plus,
-  Edit,
-  Trash2,
-  Download,
-  Upload,
-  Search,
-  Filter,
-  AlertCircle,
-  CheckCircle,
+  Search, 
+  Eye, 
+  TrendingUp, 
+  AlertTriangle, 
+  CheckCircle, 
   Clock,
-  TrendingUp,
+  Filter,
+  Download,
+  Plus,
+  Settings,
+  BookOpen,
+  Calendar,
   BarChart3,
-  Shield
+  ThumbsUp,
+  ThumbsDown,
+  ExternalLink,
+  Code,
+  Github,
+  User,
+  Mail,
+  Star,
+  X,
+  Send,
+  Edit,
+  Trash2
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { 
+  usersService, 
+  submissionsService, 
+  assignmentsService,
+  notificationsService,
+  type Submission
+} from '../../lib/firebase/index';
 
-// Mock data
-const mockStudents = [
-  {
-    id: '1',
-    name: 'Alice Johnson',
-    enrollment_no: 'A12345678',
-    email: 'alice@student.amity.edu',
-    course: 'B.Tech CSE',
-    section: 'A',
-    streak_count: 12,
-    streak_breaks: 0,
-    disqualified: false,
-    attempts: { easy: 15, medium: 8, hard: 3, choice: 5 },
-    last_submission: '2024-12-15'
-  },
-  {
-    id: '2',
-    name: 'Bob Smith',
-    enrollment_no: 'A87654321',
-    email: 'bob@student.amity.edu',
-    course: 'B.Tech IT',
-    section: 'B',
-    streak_count: 8,
-    streak_breaks: 1,
-    disqualified: false,
-    attempts: { easy: 12, medium: 6, hard: 2, choice: 4 },
-    last_submission: '2024-12-14'
-  },
-  {
-    id: '3',
-    name: 'Charlie Brown',
-    enrollment_no: 'A11223344',
-    email: 'charlie@student.amity.edu',
-    course: 'BCA',
-    section: 'A',
-    streak_count: 0,
-    streak_breaks: 3,
-    disqualified: true,
-    attempts: { easy: 5, medium: 2, hard: 0, choice: 1 },
-    last_submission: '2024-12-10'
-  }
-];
+interface AdminStats {
+  totalStudents: number;
+  activeStudents: number;
+  totalSubmissions: number;
+  pendingReviews: number;
+  averageStreak: number;
+  completionRate: number;
+}
+
+interface SubmissionReviewModalProps {
+  submission: Submission | null;
+  onClose: () => void;
+  onApprove: (feedback: string) => void;
+  onReject: (feedback: string) => void;
+}
+
+const SubmissionReviewModal: React.FC<SubmissionReviewModalProps> = ({ 
+  submission, 
+  onClose, 
+  onApprove, 
+  onReject 
+}) => {
+  const [feedback, setFeedback] = useState('');
+  const [action, setAction] = useState<'approve' | 'reject' | null>(null);
+
+  if (!submission) return null;
+
+  const handleSubmit = () => {
+    if (action === 'approve') {
+      onApprove(feedback || 'Great job! Your solution has been approved.');
+    } else if (action === 'reject') {
+      onReject(feedback || 'Please review your solution and try again.');
+    }
+    onClose();
+  };
+
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case 'easy': return 'bg-green-500 text-white';
+      case 'medium': return 'bg-yellow-500 text-white';
+      case 'hard': return 'bg-red-500 text-white';
+      default: return 'bg-blue-500 text-white';
+    }
+  };
+
+  return (
+    <Dialog open={true}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-xl font-semibold">
+              Review Submission - {submission.question_title}
+            </DialogTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* Submission Details */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium">Student:</span>
+                <span>{submission.student_name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium">Email:</span>
+                <span className="text-sm">{submission.student_email}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium">Date:</span>
+                <span>{submission.question_date}</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge className={getDifficultyColor(submission.difficulty)}>
+                  {submission.difficulty.charAt(0).toUpperCase() + submission.difficulty.slice(1)}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium">Submitted:</span>
+                <span className="text-sm">{new Date(submission.created_at).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Links */}
+          <div className="flex gap-4">
+            {submission.github_file_link && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => window.open(submission.github_file_link, '_blank')}
+                className="flex items-center gap-2"
+              >
+                <Github className="w-4 h-4" />
+                View on GitHub
+              </Button>
+            )}
+            {submission.external_problem_link && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => window.open(submission.external_problem_link, '_blank')}
+                className="flex items-center gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Problem Link
+              </Button>
+            )}
+          </div>
+
+          {/* Code Solution */}
+          <div className="space-y-2">
+            <Label className="text-base font-medium flex items-center gap-2">
+              <Code className="w-4 h-4" />
+              Solution Code
+            </Label>
+            <div className="bg-muted/50 rounded-lg p-4 border">
+              <pre className="text-sm whitespace-pre-wrap overflow-x-auto">
+                {submission.code_text || 'No code provided'}
+              </pre>
+            </div>
+          </div>
+
+          {/* Feedback */}
+          <div className="space-y-2">
+            <Label htmlFor="feedback" className="text-base font-medium">
+              Admin Feedback
+            </Label>
+            <Textarea
+              id="feedback"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Provide feedback to the student..."
+              className="min-h-[100px]"
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4 border-t">
+            <Button
+              onClick={() => setAction('approve')}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              disabled={action !== null}
+            >
+              <ThumbsUp className="w-4 h-4 mr-2" />
+              {action === 'approve' ? 'Approving...' : 'Approve Submission'}
+            </Button>
+            <Button
+              onClick={() => setAction('reject')}
+              variant="destructive"
+              className="flex-1"
+              disabled={action !== null}
+            >
+              <ThumbsDown className="w-4 h-4 mr-2" />
+              {action === 'reject' ? 'Rejecting...' : 'Reject Submission'}
+            </Button>
+          </div>
+
+          {action && (
+            <div className="bg-muted/50 rounded-lg p-4 border">
+              <p className="text-sm text-muted-foreground mb-3">
+                Ready to {action} this submission?
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={handleSubmit} size="sm">
+                  <Send className="w-4 h-4 mr-2" />
+                  Confirm {action.charAt(0).toUpperCase() + action.slice(1)}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setAction(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const AdminDashboard = () => {
-  const { userData, logout } = useAuth();
+  const { userData, logout, currentUser } = useAuth();
   const { toast } = useToast();
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [examMode, setExamMode] = useState(false);
-  const [examStartDate, setExamStartDate] = useState('');
-  const [examEndDate, setExamEndDate] = useState('');
+  
+  // State management
+  const [students, setStudents] = useState<UserData[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [pendingSubmissions, setPendingSubmissions] = useState<Submission[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<UserData | null>(null);
+  const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [stats, setStats] = useState<AdminStats>({
+    totalStudents: 0,
+    activeStudents: 0,
+    totalSubmissions: 0,
+    pendingReviews: 0,
+    averageStreak: 0,
+    completionRate: 0
+  });
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [showStudentDetails, setShowStudentDetails] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'students' | 'submissions' | 'assignments' | 'questions'>('overview');
 
-  // Question form state
-  const [questionForm, setQuestionForm] = useState({
-    date: format(new Date(), 'yyyy-MM-dd'),
-    easy: { title: '', description: '', link: '' },
-    medium: { title: '', description: '', link: '' },
-    hard: { title: '', description: '', link: '' },
-    choice: { title: '', description: '', link: '' }
+  // Filter states
+  const [courseFilter, setCourseFilter] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disqualified'>('all');
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+
+  // Questions management states
+  const [selectedAssignmentDate, setSelectedAssignmentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [assignmentDayNumber, setAssignmentDayNumber] = useState(1);
+  const [createAssignmentLoading, setCreateAssignmentLoading] = useState(false);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [editingAssignment, setEditingAssignment] = useState<any>(null);
+
+  // Auto-calculate day number based on challenge start date
+  const challengeStartDate = new Date('2024-12-01'); // Adjust this to your actual challenge start date
+  
+  useEffect(() => {
+    if (selectedAssignmentDate) {
+      const assignmentDate = new Date(selectedAssignmentDate);
+      const daysDiff = Math.floor((assignmentDate.getTime() - challengeStartDate.getTime()) / (1000 * 60 * 60 * 24));
+      const dayNumber = Math.max(1, Math.min(45, daysDiff + 1));
+      setAssignmentDayNumber(dayNumber);
+    }
+  }, [selectedAssignmentDate]);
+
+  // Question states
+  const [selectedDifficulty, setSelectedDifficulty] = useState<'easy' | 'medium' | 'hard'>('easy');
+  const [easyQuestion, setEasyQuestion] = useState({
+    title: '',
+    description: '',
+    link: '',
+    tags: [] as string[],
+    difficulty: 'easy' as const
   });
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    fetchData();
+    fetchAssignments();
+  }, []);
+
+  const fetchData = async () => {
     try {
-      await logout();
+      setLoading(true);
+      console.log('Starting admin data fetch...');
+      
+      // Fetch all students
+      console.log('Fetching users...');
+      const allUsers = await usersService.getAllUsers();
+      console.log('Users fetched:', allUsers.length);
+      
+      const studentsOnly = allUsers.filter(user => !user.isAdmin);
+      console.log('Students filtered:', studentsOnly.length);
+      setStudents(studentsOnly);
+      
+      // Fetch all submissions
+      console.log('Fetching submissions...');
+      const allSubmissions = await submissionsService.getAllSubmissions();
+      console.log('Submissions fetched:', allSubmissions.length);
+      setSubmissions(allSubmissions);
+      
+      // Filter pending submissions
+      const pending = allSubmissions.filter(sub => 
+        sub.adminReview?.status === 'pending' || 
+        sub.status === 'submitted' || 
+        !sub.adminReview
+      );
+      console.log('Pending submissions:', pending.length);
+      setPendingSubmissions(pending);
+      
+      // Calculate stats
+      calculateStats(studentsOnly, allSubmissions);
+      
+      console.log('Admin data fetch completed successfully');
+      
+    } catch (error: any) {
+      console.error('Error fetching admin data:', error);
       toast({
-        title: "Logged out successfully",
-        description: "Admin session ended"
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to load admin data: ${error.message}`
       });
-    } catch (error) {
-      console.error('Logout error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSaveQuestions = async () => {
+  const calculateStats = (students: UserData[], submissions: Submission[]) => {
+    const totalStudents = students.length;
+    const activeStudents = students.filter(s => !s.disqualified).length;
+    const totalSubmissions = submissions.length;
+    const pendingReviews = submissions.filter(s => 
+      s.adminReview?.status === 'pending' || s.status === 'submitted'
+    ).length;
+    const averageStreak = students.reduce((sum, s) => sum + s.streak_count, 0) / totalStudents || 0;
+    
+    // Calculate completion rate (students with at least one submission)
+    const studentsWithSubmissions = new Set(submissions.map(s => s.student_uid));
+    const completionRate = (studentsWithSubmissions.size / totalStudents) * 100 || 0;
+
+    setStats({
+      totalStudents,
+      activeStudents,
+      totalSubmissions,
+      pendingReviews,
+      averageStreak: Math.round(averageStreak * 10) / 10,
+      completionRate: Math.round(completionRate * 10) / 10
+    });
+  };
+
+  const handleViewStudent = (student: UserData) => {
+    setSelectedStudent(student);
+    setShowStudentDetails(true);
+  };
+
+  const handleReviewSubmission = (submission: Submission) => {
+    setSelectedSubmission(submission);
+    setShowReviewModal(true);
+  };
+
+  const handleApproveSubmission = async (feedback: string) => {
+    if (!selectedSubmission || !userData?.uid) return;
+
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Update submission status
+      await submissionsService.updateSubmissionStatus(
+        selectedSubmission.id!,
+        'approved',
+        feedback,
+        userData.uid
+      );
+      
+      // Increment approved count for student
+      await usersService.incrementApproved(selectedSubmission.student_uid, selectedSubmission.difficulty);
+      
+      // Create approval notification
+      await notificationsService.createApprovalNotification(
+        selectedSubmission.student_uid,
+        selectedSubmission.id!,
+        selectedSubmission.question_title
+      );
       
       toast({
-        title: "Questions Updated",
-        description: `Questions for ${questionForm.date} have been saved successfully`
+        title: 'Success',
+        description: 'Submission approved and student notified'
       });
+      
+      // Refresh data
+      await fetchData();
+      
     } catch (error) {
+      console.error('Error approving submission:', error);
       toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: "Failed to save questions. Please try again."
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to approve submission'
       });
     }
   };
 
-  const handleExamModeToggle = async () => {
+  const handleRejectSubmission = async (feedback: string) => {
+    if (!selectedSubmission || !userData?.uid) return;
+
     try {
-      setExamMode(!examMode);
+      // Update submission status
+      await submissionsService.updateSubmissionStatus(
+        selectedSubmission.id!,
+        'rejected',
+        feedback,
+        userData.uid
+      );
+      
+      // Create rejection notification
+      await notificationsService.createRejectionNotification(
+        selectedSubmission.student_uid,
+        selectedSubmission.id!,
+        selectedSubmission.question_title,
+        feedback
+      );
+      
       toast({
-        title: examMode ? "Exam Mode Disabled" : "Exam Mode Enabled",
-        description: examMode 
-          ? "Students can now submit solutions normally" 
-          : "Students will see the exam banner and streaks are paused"
+        title: 'Success',
+        description: 'Submission rejected and student notified'
       });
+      
+      // Refresh data
+      await fetchData();
+      
     } catch (error) {
+      console.error('Error rejecting submission:', error);
       toast({
-        variant: "destructive",
-        title: "Update Failed",
-        description: "Failed to update exam mode settings"
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject submission'
       });
     }
   };
 
-  const filteredStudents = mockStudents.filter(student =>
-    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.enrollment_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Assignment management functions
+  const handleCreateAssignment = async () => {
+    if (!selectedDifficulty || !easyQuestion.title || !easyQuestion.description || !easyQuestion.link) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please fill in all question details and select difficulty'
+      });
+      return;
+    }
+
+    try {
+      setCreateAssignmentLoading(true);
+      
+      console.log('Creating assignment for date:', selectedAssignmentDate);
+      console.log('Selected difficulty:', selectedDifficulty);
+      
+      // Create question object with selected difficulty
+      const questionData = {
+        title: easyQuestion.title,
+        description: easyQuestion.description,
+        link: easyQuestion.link,
+        tags: easyQuestion.tags,
+        difficulty: selectedDifficulty
+      };
+
+      // Create default empty questions for other difficulties
+      const defaultQuestion = {
+        title: '',
+        description: '',
+        link: '',
+        tags: [],
+        difficulty: 'easy' as const
+      };
+
+      const assignmentData = {
+        date: selectedAssignmentDate,
+        day_number: assignmentDayNumber,
+        easy_question: selectedDifficulty === 'easy' ? questionData : defaultQuestion,
+        medium_question: selectedDifficulty === 'medium' ? {...questionData, difficulty: 'medium' as const} : {...defaultQuestion, difficulty: 'medium' as const},
+        hard_question: selectedDifficulty === 'hard' ? {...questionData, difficulty: 'hard' as const} : {...defaultQuestion, difficulty: 'hard' as const},
+        created_by: currentUser?.uid || ''
+      };
+
+      console.log('Assignment data:', assignmentData);
+
+      await assignmentsService.setAssignment(selectedAssignmentDate, assignmentData);
+      
+      toast({
+        title: 'Success',
+        description: `${selectedDifficulty.toUpperCase()} assignment created successfully for ${selectedAssignmentDate}!`
+      });
+
+      // Reset form
+      handleResetAssignmentForm();
+      // Refresh assignments
+      await fetchAssignments();
+      
+    } catch (error) {
+      console.error('Error creating assignment:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to create assignment: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
+    } finally {
+      setCreateAssignmentLoading(false);
+    }
+  };
+
+  const handleResetAssignmentForm = () => {
+    setSelectedDifficulty('easy');
+    setEasyQuestion({
+      title: '',
+      description: '',
+      link: '',
+      tags: [],
+      difficulty: 'easy'
+    });
+    // Set to today's date by default
+    setSelectedAssignmentDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      console.log('Fetching all assignments...');
+      const allAssignments = await assignmentsService.getAllAssignments();
+      console.log('Assignments fetched:', allAssignments);
+      setAssignments(allAssignments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+    }
+  };
+
+  const handleEditAssignment = (assignment: any) => {
+    setSelectedAssignmentDate(assignment.date);
+    setAssignmentDayNumber(assignment.day_number);
+    setEditingAssignment(assignment);
+    
+    // Determine which question is filled and set the appropriate difficulty
+    if (assignment.easy_question.title) {
+      setSelectedDifficulty('easy');
+      setEasyQuestion(assignment.easy_question);
+    } else if (assignment.medium_question.title) {
+      setSelectedDifficulty('medium');
+      setEasyQuestion(assignment.medium_question);
+    } else if (assignment.hard_question.title) {
+      setSelectedDifficulty('hard');
+      setEasyQuestion(assignment.hard_question);
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    try {
+      await assignmentsService.deleteAssignment(assignmentId);
+      toast({
+        title: 'Success',
+        description: 'Assignment deleted successfully'
+      });
+      await fetchAssignments();
+    } catch (error) {
+      console.error('Error deleting assignment:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete assignment'
+      });
+    }
+  };
+
+  // Filter functions
+  const filteredStudents = students.filter(student => {
+    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         student.enrollment_no.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCourse = !courseFilter || student.course === courseFilter;
+    const matchesSection = !sectionFilter || student.section === sectionFilter;
+    const matchesStatus = statusFilter === 'all' || 
+                         (statusFilter === 'active' && !student.disqualified) ||
+                         (statusFilter === 'disqualified' && student.disqualified);
+    
+    return matchesSearch && matchesCourse && matchesSection && matchesStatus;
+  });
+
+  const filteredSubmissions = submissions.filter(submission => {
+    const matchesSearch = submission.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         submission.question_title.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = submissionStatusFilter === 'all' || 
+                         (submissionStatusFilter === 'pending' && (submission.adminReview?.status === 'pending' || submission.status === 'submitted')) ||
+                         (submissionStatusFilter === 'approved' && (submission.adminReview?.status === 'approved' || submission.status === 'approved')) ||
+                         (submissionStatusFilter === 'rejected' && (submission.adminReview?.status === 'rejected' || submission.status === 'rejected'));
+    
+    return matchesSearch && matchesStatus;
+  });
 
   if (!userData?.isAdmin) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6 text-center">
-            <Shield className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-xl font-heading font-semibold mb-2">Access Denied</h2>
-            <p className="text-muted-foreground">You don't have admin privileges to access this dashboard.</p>
-          </CardContent>
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="p-6 text-center">
+          <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-destructive" />
+          <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+          <p className="text-muted-foreground">You don't have permission to access this page.</p>
         </Card>
       </div>
     );
@@ -169,24 +639,19 @@ const AdminDashboard = () => {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-primary">
-                  <Settings className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-heading font-bold">Admin Dashboard</h1>
-                  <p className="text-sm text-muted-foreground">45 Days Of Code - Amity University</p>
-                </div>
-              </div>
+              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             </div>
-
             <div className="flex items-center gap-4">
-              <Badge variant="secondary" className="px-3 py-1">
-                <Shield className="w-3 h-3 mr-1" />
-                Admin
-              </Badge>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
+              <Button 
+                variant="outline" 
+                onClick={fetchData}
+                disabled={loading}
+                className="flex items-center gap-2"
+              >
+                <TrendingUp className="w-4 h-4" />
+                {loading ? 'Refreshing...' : 'Refresh Data'}
+              </Button>
+              <Button variant="outline" onClick={logout}>
                 Logout
               </Button>
             </div>
@@ -195,418 +660,615 @@ const AdminDashboard = () => {
       </header>
 
       <div className="container mx-auto px-4 py-6">
-        {/* Overview Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total Students</p>
-                  <p className="text-3xl font-bold">{mockStudents.length}</p>
-                </div>
-                <Users className="w-8 h-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Active Streaks</p>
-                  <p className="text-3xl font-bold text-success">
-                    {mockStudents.filter(s => s.streak_count > 0 && !s.disqualified).length}
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-success" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Disqualified</p>
-                  <p className="text-3xl font-bold text-destructive">
-                    {mockStudents.filter(s => s.disqualified).length}
-                  </p>
-                </div>
-                <AlertCircle className="w-8 h-8 text-destructive" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Avg Submissions</p>
-                  <p className="text-3xl font-bold text-accent">
-                    {Math.round(
-                      mockStudents.reduce((acc, s) => 
-                        acc + s.attempts.easy + s.attempts.medium + s.attempts.hard + s.attempts.choice, 0
-                      ) / mockStudents.length
-                    )}
-                  </p>
-                </div>
-                <BarChart3 className="w-8 h-8 text-accent" />
-              </div>
-            </CardContent>
-          </Card>
+        {/* Tab Navigation */}
+        <div className="mb-6">
+          <div className="border-b">
+            <nav className="-mb-px flex space-x-8">
+              {[
+                { id: 'overview', label: 'Overview', icon: BarChart3 },
+                { id: 'students', label: 'Students', icon: Users },
+                { id: 'submissions', label: 'Submissions', icon: BookOpen },
+                { id: 'assignments', label: 'Assignments', icon: Calendar },
+                { id: 'questions', label: 'Questions', icon: Code }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSelectedTab(tab.id as any)}
+                  className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm ${
+                    selectedTab === tab.id
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
         </div>
 
-        <Tabs defaultValue="questions" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="questions">Manage Questions</TabsTrigger>
-            <TabsTrigger value="students">Students</TabsTrigger>
-            <TabsTrigger value="exam-mode">Exam Mode</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
-
-          {/* Manage Questions Tab */}
-          <TabsContent value="questions" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Question Management</CardTitle>
-                    <CardDescription>
-                      Assign daily questions for each difficulty level
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Bulk Import
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Download className="w-4 h-4 mr-2" />
-                      Export
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Date Selector */}
-                <div className="flex items-center gap-4">
-                  <Label htmlFor="question-date">Select Date:</Label>
-                  <Input
-                    id="question-date"
-                    type="date"
-                    value={questionForm.date}
-                    onChange={(e) => setQuestionForm(prev => ({ ...prev, date: e.target.value }))}
-                    className="w-auto"
-                  />
-                </div>
-
-                {/* Question Forms */}
-                {(['easy', 'medium', 'hard', 'choice'] as const).map((difficulty) => (
-                  <Card key={difficulty} className="border-l-4" style={{
-                    borderLeftColor: 
-                      difficulty === 'easy' ? 'hsl(var(--success))' :
-                      difficulty === 'medium' ? 'hsl(var(--warning))' :
-                      difficulty === 'hard' ? 'hsl(var(--destructive))' :
-                      'hsl(var(--accent))'
-                  }}>
-                    <CardHeader>
-                      <CardTitle className="text-lg capitalize flex items-center gap-2">
-                        <Badge className={
-                          difficulty === 'easy' ? 'bg-success text-success-foreground' :
-                          difficulty === 'medium' ? 'bg-warning text-warning-foreground' :
-                          difficulty === 'hard' ? 'bg-destructive text-destructive-foreground' :
-                          'bg-accent text-accent-foreground'
-                        }>
-                          {difficulty === 'choice' ? 'Code of Choice' : difficulty}
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor={`${difficulty}-title`}>Problem Title *</Label>
-                          <Input
-                            id={`${difficulty}-title`}
-                            placeholder="Two Sum Problem"
-                            value={questionForm[difficulty].title}
-                            onChange={(e) => setQuestionForm(prev => ({
-                              ...prev,
-                              [difficulty]: { ...prev[difficulty], title: e.target.value }
-                            }))}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor={`${difficulty}-link`}>Problem Link</Label>
-                          <Input
-                            id={`${difficulty}-link`}
-                            placeholder="https://leetcode.com/problems/..."
-                            value={questionForm[difficulty].link}
-                            onChange={(e) => setQuestionForm(prev => ({
-                              ...prev,
-                              [difficulty]: { ...prev[difficulty], link: e.target.value }
-                            }))}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label htmlFor={`${difficulty}-description`}>Description</Label>
-                        <Textarea
-                          id={`${difficulty}-description`}
-                          placeholder="Brief description of the problem..."
-                          value={questionForm[difficulty].description}
-                          onChange={(e) => setQuestionForm(prev => ({
-                            ...prev,
-                            [difficulty]: { ...prev[difficulty], description: e.target.value }
-                          }))}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-
-                <Button onClick={handleSaveQuestions} variant="hero" size="lg" className="w-full">
-                  Save Questions for {questionForm.date}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Students Tab */}
-          <TabsContent value="students" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Student Management</CardTitle>
-                    <CardDescription>
-                      Monitor student progress and manage accounts
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search students..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-8 w-64"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {filteredStudents.map((student) => (
-                    <Card key={student.id} className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center text-white font-medium">
-                            {student.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h4 className="font-medium">{student.name}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              {student.enrollment_no} • {student.course} - {student.section}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm text-muted-foreground">Streak:</span>
-                              <Badge variant={student.streak_count > 0 ? "default" : "secondary"}>
-                                {student.streak_count} days
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground">Breaks:</span>
-                              <Badge variant={student.streak_breaks === 0 ? "default" : "destructive"}>
-                                {student.streak_breaks}/3
-                              </Badge>
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-sm text-muted-foreground mb-1">Total Attempts</div>
-                            <div className="font-medium">
-                              {student.attempts.easy + student.attempts.medium + student.attempts.hard + student.attempts.choice}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {student.disqualified ? (
-                              <Badge variant="destructive">Disqualified</Badge>
-                            ) : (
-                              <Badge variant="default">Active</Badge>
-                            )}
-                          </div>
-
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setSelectedStudent(student)}
-                          >
-                            View Details
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Exam Mode Tab */}
-          <TabsContent value="exam-mode" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Exam Cooldown Settings</CardTitle>
-                <CardDescription>
-                  Configure exam periods where student streaks are paused
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Exam Mode Status</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {examMode ? "Currently active - students see exam banner" : "Not active - normal operation"}
-                    </p>
-                  </div>
-                  <Switch checked={examMode} onCheckedChange={handleExamModeToggle} />
-                </div>
-
-                {examMode && (
-                  <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-2">
-                      <AlertCircle className="w-5 h-5" />
-                      <span className="font-medium">Exam Mode Active</span>
-                    </div>
-                    <p className="text-sm text-blue-600/80 dark:text-blue-400/80">
-                      📚 Students are seeing: "All The Best For Your Exams! Your streak is paused during this period."
-                    </p>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="exam-start">Exam Start Date</Label>
-                    <Input
-                      id="exam-start"
-                      type="date"
-                      value={examStartDate}
-                      onChange={(e) => setExamStartDate(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="exam-end">Exam End Date</Label>
-                    <Input
-                      id="exam-end"
-                      type="date"
-                      value={examEndDate}
-                      onChange={(e) => setExamEndDate(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="font-medium">Exam Period Rules</h4>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Student streaks are automatically paused during exam periods</p>
-                    <p>• No streak breaks are counted for missed days during exams</p>
-                    <p>• Students can still submit solutions (optional setting)</p>
-                    <p>• A banner message is displayed to all students</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Analytics Tab */}
-          <TabsContent value="analytics" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Tab Content */}
+        {selectedTab === 'overview' && (
+          <div className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>Submission Distribution</CardTitle>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Students
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {['easy', 'medium', 'hard', 'choice'].map((difficulty) => {
-                      const total = mockStudents.reduce((sum, student) => 
-                        sum + student.attempts[difficulty as keyof typeof student.attempts], 0
-                      );
-                      const maxTotal = Math.max(...['easy', 'medium', 'hard', 'choice'].map(d => 
-                        mockStudents.reduce((sum, student) => 
-                          sum + student.attempts[d as keyof typeof student.attempts], 0
-                        )
-                      ));
-                      const percentage = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-                      
-                      return (
-                        <div key={difficulty} className="space-y-2">
-                          <div className="flex justify-between">
-                            <span className="capitalize">{difficulty}</span>
-                            <span className="font-medium">{total}</span>
-                          </div>
-                          <div className="w-full bg-muted rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${
-                                difficulty === 'easy' ? 'bg-success' :
-                                difficulty === 'medium' ? 'bg-warning' :
-                                difficulty === 'hard' ? 'bg-destructive' :
-                                'bg-accent'
-                              }`}
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="text-2xl font-bold">{stats.totalStudents}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {stats.activeStudents} active
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle>Streak Distribution</CardTitle>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Submissions
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {[
-                      { label: '0 days', count: mockStudents.filter(s => s.streak_count === 0).length },
-                      { label: '1-5 days', count: mockStudents.filter(s => s.streak_count >= 1 && s.streak_count <= 5).length },
-                      { label: '6-15 days', count: mockStudents.filter(s => s.streak_count >= 6 && s.streak_count <= 15).length },
-                      { label: '15+ days', count: mockStudents.filter(s => s.streak_count > 15).length },
-                    ].map((range, index) => {
-                      const percentage = mockStudents.length > 0 ? (range.count / mockStudents.length) * 100 : 0;
-                      
-                      return (
-                        <div key={index} className="space-y-2">
-                          <div className="flex justify-between">
-                            <span>{range.label}</span>
-                            <span className="font-medium">{range.count}</span>
-                          </div>
-                          <div className="w-full bg-muted rounded-full h-2">
-                            <div 
-                              className="h-2 rounded-full bg-primary"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="text-2xl font-bold">{stats.totalSubmissions}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {stats.pendingReviews} pending review
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Average Streak
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.averageStreak}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {stats.completionRate}% completion rate
                   </div>
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-        </Tabs>
+
+            {/* Pending Reviews */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="w-5 h-5" />
+                  Pending Reviews ({pendingSubmissions.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {pendingSubmissions.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">
+                    No submissions pending review
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingSubmissions.slice(0, 5).map((submission) => (
+                      <div key={submission.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline">
+                            {submission.difficulty}
+                          </Badge>
+                          <div>
+                            <p className="font-medium">{submission.student_name}</p>
+                            <p className="text-sm text-muted-foreground">{submission.question_title}</p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleReviewSubmission(submission)}
+                          className="flex items-center gap-2"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Review
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {selectedTab === 'students' && (
+          <div className="space-y-6">
+            {/* Search and Filters */}
+            <div className="flex gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search students..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="border rounded-md px-3 py-2"
+              >
+                <option value="all">All Students</option>
+                <option value="active">Active</option>
+                <option value="disqualified">Disqualified</option>
+              </select>
+            </div>
+
+            {/* Students Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Students ({filteredStudents.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Enrollment</TableHead>
+                      <TableHead>Streak</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredStudents.map((student) => (
+                      <TableRow key={student.uid}>
+                        <TableCell className="font-medium">{student.name}</TableCell>
+                        <TableCell>{student.email}</TableCell>
+                        <TableCell>{student.enrollment_no}</TableCell>
+                        <TableCell>{student.streak_count}</TableCell>
+                        <TableCell>
+                          <Badge variant={student.disqualified ? "destructive" : "default"}>
+                            {student.disqualified ? "Disqualified" : "Active"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewStudent(student)}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {selectedTab === 'submissions' && (
+          <div className="space-y-6">
+            {/* Search and Filters */}
+            <div className="flex gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search submissions..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <select
+                value={submissionStatusFilter}
+                onChange={(e) => setSubmissionStatusFilter(e.target.value as any)}
+                className="border rounded-md px-3 py-2"
+              >
+                <option value="all">All Submissions</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+
+            {/* Submissions Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Submissions ({filteredSubmissions.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>Question</TableHead>
+                      <TableHead>Difficulty</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSubmissions.map((submission) => (
+                      <TableRow key={submission.id}>
+                        <TableCell className="font-medium">{submission.student_name}</TableCell>
+                        <TableCell>{submission.question_title}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {submission.difficulty}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{submission.question_date}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              (submission.adminReview?.status === 'approved' || submission.status === 'approved') ? "default" :
+                              (submission.adminReview?.status === 'rejected' || submission.status === 'rejected') ? "destructive" :
+                              "secondary"
+                            }
+                          >
+                            {submission.adminReview?.status || submission.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReviewSubmission(submission)}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            Review
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Assignments Tab - List Format */}
+        {selectedTab === 'assignments' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">Assignments</h2>
+              <p className="text-muted-foreground">View and manage all created assignments by day</p>
+            </div>
+
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-foreground">All Assignments</CardTitle>
+                <CardDescription>
+                  Complete list of assignments organized by date with all difficulty levels
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {assignments.length === 0 ? (
+                    <div className="text-center py-12 text-gray-600 bg-gray-50 rounded-lg border-2 border-dashed">
+                      <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                      <p className="text-xl font-medium mb-2">No assignments created yet</p>
+                      <p className="text-sm">Go to the Questions tab to create your first assignment</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {assignments.map((assignment) => {
+                        const questions = [
+                          assignment.easy_question.title && { ...assignment.easy_question, level: 'Easy', color: 'bg-green-500' },
+                          assignment.medium_question.title && { ...assignment.medium_question, level: 'Medium', color: 'bg-yellow-500' },
+                          assignment.hard_question.title && { ...assignment.hard_question, level: 'Hard', color: 'bg-red-500' }
+                        ].filter(Boolean);
+
+                        return (
+                          <div key={assignment.id} className="flex items-center justify-between p-4 bg-white border-2 rounded-lg hover:shadow-md transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-5 h-5 text-gray-600" />
+                                <span className="font-bold text-lg text-gray-900">{assignment.date}</span>
+                                <Badge variant="outline" className="border-2 text-sm font-medium">Day {assignment.day_number}</Badge>
+                              </div>
+                              
+                              <div className="flex gap-2">
+                                {questions.map((question: any, index) => (
+                                  <Badge key={index} className={`${question.color} text-white text-sm px-3 py-1 font-medium`}>
+                                    {question.level}
+                                  </Badge>
+                                ))}
+                                {questions.length === 0 && (
+                                  <Badge variant="secondary" className="text-sm">No questions</Badge>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditAssignment(assignment)}
+                                className="border-2 hover:bg-gray-50"
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Manage
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteAssignment(assignment.id!)}
+                                className="border-2 text-red-600 hover:bg-red-50 hover:border-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Questions Management Section */}
+        {selectedTab === 'questions' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">Daily Assignment Creator</h2>
+              <p className="text-muted-foreground">Create and assign coding challenges for specific dates</p>
+            </div>
+
+            <Card className="border-2 bg-white">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-foreground">Assignment Creator</CardTitle>
+                <CardDescription>
+                  Create a new coding challenge assignment for a specific date
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="assignment-date" className="text-sm font-medium text-foreground">Assignment Date</Label>
+                    <Input
+                      id="assignment-date"
+                      type="date"
+                      value={selectedAssignmentDate}
+                      onChange={(e) => setSelectedAssignmentDate(e.target.value)}
+                      className="border-2 focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="difficulty" className="text-sm font-medium text-foreground">Question Difficulty</Label>
+                    <Select value={selectedDifficulty} onValueChange={(value: 'easy' | 'medium' | 'hard') => setSelectedDifficulty(value)}>
+                      <SelectTrigger className="w-full border-2 focus:border-primary">
+                        <SelectValue placeholder="Select difficulty" />
+                      </SelectTrigger>
+                      <SelectContent className="border-2">
+                        <SelectItem value="easy" className="hover:bg-green-50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span className="font-medium">Easy</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="medium" className="hover:bg-yellow-50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <span className="font-medium">Medium</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="hard" className="hover:bg-red-50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                            <span className="font-medium">Hard</span>
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Question Details */}
+                <div className={`space-y-4 p-6 border-2 rounded-lg ${
+                  selectedDifficulty === 'easy' ? 'bg-white border-green-400 shadow-green-100' : 
+                  selectedDifficulty === 'medium' ? 'bg-white border-yellow-400 shadow-yellow-100' : 'bg-white border-red-400 shadow-red-100'
+                } shadow-lg`}>
+                  <div className="flex items-center gap-3">
+                    <Badge className={`text-white font-medium px-3 py-1 ${
+                      selectedDifficulty === 'easy' ? 'bg-green-600' : 
+                      selectedDifficulty === 'medium' ? 'bg-yellow-600' : 'bg-red-600'
+                    }`}>
+                      {selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1)} Question
+                    </Badge>
+                    <span className="text-sm text-gray-600">Fill in the question details below</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-gray-800">Question Title *</Label>
+                      <Input
+                        placeholder="e.g., Two Sum, Add Two Numbers, etc."
+                        value={easyQuestion.title}
+                        onChange={(e) => setEasyQuestion(prev => ({ ...prev, title: e.target.value }))}
+                        className="border-2 focus:border-primary bg-white text-gray-900 placeholder:text-gray-500"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-gray-800">Problem Link *</Label>
+                      <Input
+                        placeholder="https://leetcode.com/problems/..."
+                        value={easyQuestion.link}
+                        onChange={(e) => setEasyQuestion(prev => ({ ...prev, link: e.target.value }))}
+                        className="border-2 focus:border-primary bg-white text-gray-900 placeholder:text-gray-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-gray-800">Problem Description *</Label>
+                    <Textarea
+                      placeholder="Describe the problem clearly..."
+                      value={easyQuestion.description}
+                      onChange={(e) => setEasyQuestion(prev => ({ ...prev, description: e.target.value }))}
+                      rows={4}
+                      className="border-2 focus:border-primary bg-white text-gray-900 placeholder:text-gray-500"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-800">Tags</Label>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border-2 border-gray-300 rounded-md bg-white">
+                        {easyQuestion.tags.map((tag, index) => (
+                          <Badge 
+                            key={index} 
+                            variant="secondary" 
+                            className="bg-blue-100 text-blue-800 hover:bg-blue-200 cursor-pointer"
+                            onClick={() => setEasyQuestion(prev => ({
+                              ...prev,
+                              tags: prev.tags.filter((_, i) => i !== index)
+                            }))}
+                          >
+                            {tag} ×
+                          </Badge>
+                        ))}
+                      </div>
+                      <Input
+                        placeholder="Type a tag and press Enter (e.g., Array, Hash Table, Math)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const value = e.currentTarget.value.trim();
+                            if (value && !easyQuestion.tags.includes(value)) {
+                              setEasyQuestion(prev => ({
+                                ...prev,
+                                tags: [...prev.tags, value]
+                              }));
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                        className="border-2 focus:border-primary bg-white text-gray-900 placeholder:text-gray-500"
+                      />
+                      <p className="text-xs text-gray-600">Press Enter to add tags. Click on tags to remove them.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={handleResetAssignmentForm}
+                    className="border-2 hover:bg-muted"
+                  >
+                    Reset Form
+                  </Button>
+                  <Button 
+                    onClick={handleCreateAssignment} 
+                    disabled={createAssignmentLoading}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  >
+                    {createAssignmentLoading ? 'Creating...' : 'Create Assignment'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Existing Assignments */}
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-foreground">Existing Assignments</CardTitle>
+                <CardDescription>
+                  View and manage previously created assignments
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {assignments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-600 bg-gray-50 rounded-lg border-2 border-dashed">
+                      <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                      <p className="text-lg font-medium">No assignments created yet</p>
+                      <p className="text-sm">Click "Create Assignment" to add your first assignment</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {assignments.map((assignment) => {
+                        const questions = [
+                          assignment.easy_question.title && { ...assignment.easy_question, level: 'Easy', color: 'bg-green-500' },
+                          assignment.medium_question.title && { ...assignment.medium_question, level: 'Medium', color: 'bg-yellow-500' },
+                          assignment.hard_question.title && { ...assignment.hard_question, level: 'Hard', color: 'bg-red-500' }
+                        ].filter(Boolean);
+
+                        return (
+                          <div key={assignment.id} className="flex items-center justify-between p-4 bg-white border-2 rounded-lg hover:shadow-md transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-gray-600" />
+                                <span className="font-semibold text-gray-900">{assignment.date}</span>
+                                <Badge variant="outline" className="border-2 text-xs">Day {assignment.day_number}</Badge>
+                              </div>
+                              
+                              <div className="flex gap-2">
+                                {questions.map((question: any, index) => (
+                                  <Badge key={index} className={`${question.color} text-white text-xs px-2 py-1`}>
+                                    {question.level}
+                                  </Badge>
+                                ))}
+                                {questions.length === 0 && (
+                                  <Badge variant="secondary" className="text-xs">No questions</Badge>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditAssignment(assignment)}
+                                className="border-2 hover:bg-gray-50"
+                              >
+                                <Edit className="w-4 h-4 mr-1" />
+                                Manage
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteAssignment(assignment.id!)}
+                                className="border-2 text-red-600 hover:bg-red-50 hover:border-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
+
+      {/* Review Modal */}
+      {showReviewModal && (
+        <SubmissionReviewModal
+          submission={selectedSubmission}
+          onClose={() => {
+            setShowReviewModal(false);
+            setSelectedSubmission(null);
+          }}
+          onApprove={handleApproveSubmission}
+          onReject={handleRejectSubmission}
+        />
+      )}
     </div>
   );
 };
 
 export default AdminDashboard;
+

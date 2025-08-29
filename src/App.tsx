@@ -10,6 +10,7 @@ import SignupPage from "./components/auth/SignupPage";
 import StudentDashboard from "./components/dashboard/StudentDashboard";
 import AdminDashboard from "./components/dashboard/AdminDashboard";
 import ProfilePage from "./components/profile/ProfilePage";
+import AuthDebug from "./components/debug/AuthDebug";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -64,8 +65,13 @@ const DashboardRouter = () => {
     );
   }
   
-  // Admin users go to admin dashboard, students go to student dashboard
-  return userData.isAdmin ? <AdminDashboard /> : <StudentDashboard />;
+  // Show admin dashboard if logged in with admin email
+  if (userData.email === 'amiarchive79.in@gmail.com') {
+    return <AdminDashboard />;
+  }
+  
+  // For all other users, show student dashboard
+  return <StudentDashboard />;
 };
 
 const App = () => (
@@ -100,6 +106,9 @@ const App = () => (
                   <ProfilePage />
                 </ProtectedRoute>
               } />
+              
+              {/* Debug route */}
+              <Route path="/debug" element={<AuthDebug />} />
               
               {/* Catch-all route */}
               <Route path="*" element={<NotFound />} />

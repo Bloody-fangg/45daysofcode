@@ -1,31 +1,23 @@
 import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Code, Github, Link, Send, X } from 'lucide-react';
+import { Code, X } from 'lucide-react';
 
 interface SubmissionModalProps {
   question: {
     title: string;
-    description: string;
     difficulty: string;
-    link?: string;
   };
   onClose: () => void;
-  onSubmit: (submission: any) => void;
+  onSubmit: (code: string) => void;
 }
 
 const SubmissionModal: React.FC<SubmissionModalProps> = ({ question, onClose, onSubmit }) => {
-  const [formData, setFormData] = useState({
-    code: '',
-    githubLink: '',
-    externalLink: question.link || '',
-    notes: ''
-  });
+  const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
 
@@ -42,7 +34,7 @@ const SubmissionModal: React.FC<SubmissionModalProps> = ({ question, onClose, on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.code.trim()) {
+    if (!code.trim()) {
       toast({
         variant: "destructive",
         title: "Code Required",
@@ -53,24 +45,11 @@ const SubmissionModal: React.FC<SubmissionModalProps> = ({ question, onClose, on
 
     try {
       setSubmitting(true);
-      
-      // Simulate submission delay
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const submission = {
-        question_title: question.title,
-        difficulty: question.difficulty,
-        code_text: formData.code,
-        github_file_link: formData.githubLink,
-        external_problem_link: formData.externalLink,
-        notes: formData.notes,
-        submitted_at: new Date().toISOString()
-      };
-      
-      onSubmit(submission);
+      onSubmit(code);
       
       toast({
-        title: "Submission Successful! 🎉",
+        title: "Submission Successful! ",
         description: "Your solution has been submitted and your streak has been updated."
       });
     } catch (error) {
@@ -85,134 +64,101 @@ const SubmissionModal: React.FC<SubmissionModalProps> = ({ question, onClose, on
   };
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge className={getDifficultyColor(question.difficulty)}>
-                  {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
-                </Badge>
-                <DialogTitle className="text-xl">{question.title}</DialogTitle>
-              </div>
-              <DialogDescription className="text-base">
-                {question.description}
-              </DialogDescription>
-            </div>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="w-4 h-4" />
-            </Button>
+    <Dialog open={true}>
+      <DialogContent 
+        className="max-w-6xl w-[95vw] h-[95vh] max-h-[95vh] flex flex-col p-0 overflow-hidden [&>button]:hidden"
+      >
+        <DialogHeader className="px-8 pt-7 pb-5 border-b bg-muted/20 relative">
+          <div className="flex items-center gap-3">
+            <Badge 
+              className={`${getDifficultyColor(question.difficulty)} text-sm font-medium px-3 py-1`}
+            >
+              {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
+            </Badge>
+            <DialogTitle className="text-2xl font-semibold tracking-tight pr-12">
+              {question.title}
+            </DialogTitle>
           </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={onClose}
+            className="absolute right-6 top-6 h-9 w-9 rounded-full text-red-500 hover:bg-red-100 hover:text-red-600 transition-colors"
+          >
+            <X className="h-5 w-5" />
+            <span className="sr-only">Close</span>
+          </Button>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Code Solution */}
-          <div className="space-y-3">
-            <Label htmlFor="code" className="text-base font-medium">
-              Your Solution Code *
-            </Label>
-            <Textarea
-              id="code"
-              placeholder="// Paste your complete solution code here
-function solveProblem() {
-  // Your implementation
-  return result;
-}
-
-// Include test cases if needed"
-              value={formData.code}
-              onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-              className="min-h-[200px] font-mono text-sm"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Include your complete solution with proper formatting and comments
-            </p>
-          </div>
-
-          {/* GitHub Link */}
-          <div className="space-y-3">
-            <Label htmlFor="githubLink" className="text-base font-medium">
-              GitHub File Link
-              <span className="text-muted-foreground ml-1">(Optional)</span>
-            </Label>
-            <div className="relative">
-              <Github className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="githubLink"
-                placeholder="https://github.com/username/repo/blob/main/day1-solution.js"
-                value={formData.githubLink}
-                onChange={(e) => setFormData(prev => ({ ...prev, githubLink: e.target.value }))}
-                className="pl-10"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Direct link to your solution file in your GitHub repository
-            </p>
-          </div>
-
-          {/* External Problem Link */}
-          <div className="space-y-3">
-            <Label htmlFor="externalLink" className="text-base font-medium">
-              Problem Link
-            </Label>
-            <div className="relative">
-              <Link className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="externalLink"
-                placeholder="https://leetcode.com/problems/..."
-                value={formData.externalLink}
-                onChange={(e) => setFormData(prev => ({ ...prev, externalLink: e.target.value }))}
-                className="pl-10"
-                readOnly={!!question.link}
-              />
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 p-8 overflow-y-auto">
+            <div className="space-y-6 max-w-5xl mx-auto w-full">
+              <div className="flex items-center justify-between bg-muted/30 rounded-lg px-5 py-3 border">
+                <Label htmlFor="code" className="flex items-center gap-2 text-base font-medium">
+                  <Code className="h-5 w-5" />
+                  Your Solution Code
+                </Label>
+                <span className="text-sm text-muted-foreground font-mono">
+                  {code.length.toLocaleString()} characters
+                </span>
+              </div>
+              
+              <div className="relative rounded-xl border overflow-hidden shadow-sm">
+                <Textarea
+                  id="code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder={`// Write your ${question.difficulty} solution here...\n// You can use any programming language\n// Make sure your code is well-formatted and documented`}
+                  className="min-h-[65vh] font-mono text-sm p-6 leading-relaxed focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 resize-none"
+                  spellCheck="false"
+                  required
+                  autoFocus
+                />
+                {!code && (
+                  <div className="absolute inset-0 pointer-events-none flex items-start justify-end p-6">
+                    <div className="text-xs text-muted-foreground bg-background/80 px-3 py-1.5 rounded-lg border">
+                      Press <kbd className="px-1.5 py-0.5 text-xs border rounded bg-muted font-mono">Tab</kbd> to indent
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Notes */}
-          <div className="space-y-3">
-            <Label htmlFor="notes" className="text-base font-medium">
-              Notes & Approach
-              <span className="text-muted-foreground ml-1">(Optional)</span>
-            </Label>
-            <Textarea
-              id="notes"
-              placeholder="Describe your approach, time/space complexity, challenges faced, etc."
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              className="min-h-[100px]"
-            />
-          </div>
-
-          {/* Submission Guidelines */}
-          <div className="p-4 rounded-lg bg-muted/50 border">
-            <h4 className="font-medium mb-2 flex items-center gap-2">
-              <Code className="w-4 h-4" />
-              Submission Guidelines
-            </h4>
-            <ul className="text-sm space-y-1 text-muted-foreground">
-              <li>• Ensure your code is working and handles edge cases</li>
-              <li>• Include proper comments and formatting</li>
-              <li>• Test your solution before submitting</li>
-              <li>• Submit only one solution per difficulty per day</li>
-            </ul>
-          </div>
-
-          {/* Submit Button */}
-          <div className="flex gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              variant="hero" 
-              disabled={submitting}
-              className="flex-1 flex items-center gap-2"
-            >
-              <Send className="w-4 h-4" />
-              {submitting ? "Submitting..." : "Submit Solution"}
-            </Button>
+          <div className="border-t bg-muted/20 px-8 py-5 mt-auto">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Make sure your code is properly formatted and tested before submitting.
+              </p>
+              <div className="flex items-center gap-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={onClose}
+                  disabled={submitting}
+                  className="h-11 px-7 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700 hover:border-red-400 transition-colors"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  variant="default"
+                  size="lg"
+                  disabled={submitting || !code.trim()}
+                  className="min-w-[160px] h-11 px-7 bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Submitting...
+                    </>
+                  ) : 'Submit Solution'}
+                </Button>
+              </div>
+            </div>
           </div>
         </form>
       </DialogContent>
