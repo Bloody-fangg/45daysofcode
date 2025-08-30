@@ -19,15 +19,20 @@ export interface Submission {
   student_name: string;
   student_email: string;
   question_date: string;
+  day_number?: number;
   difficulty: 'easy' | 'medium' | 'hard' | 'choice';
   question_title: string;
   code_text: string;
   github_file_link: string;
+  github_link?: string; // Alternative field name
   external_problem_link: string;
+  comments?: string;
+  feedback?: string;
   created_at: string;
   updated_at: string;
+  submitted_at: string;
   submittedAt: Date; // For better date handling
-  status: 'submitted' | 'approved' | 'rejected';
+  status: 'pending' | 'submitted' | 'approved' | 'rejected';
   admin_feedback?: string;
   reviewed_at?: string;
   reviewed_by?: string;
@@ -118,6 +123,26 @@ export const submissionsService = {
     }
   },
 
+  // Get user submissions for a specific date
+  async getUserSubmissionsForDate(userId: string, date: string): Promise<Submission[]> {
+    try {
+      const q = query(
+        collection(db, COLLECTIONS.SUBMISSIONS),
+        where('student_uid', '==', userId),
+        where('question_date', '==', date),
+        orderBy('submitted_at', 'desc')
+      );
+      const submissionsSnapshot = await getDocs(q);
+      return submissionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Submission[];
+    } catch (error) {
+      console.error('Error fetching user submissions for date:', error);
+      return [];
+    }
+  },
+
   // Get submissions for a specific date
   async getSubmissionsByDate(date: string): Promise<Submission[]> {
     try {
@@ -175,6 +200,91 @@ export const submissionsService = {
       if (reviewedBy) updateData.reviewed_by = reviewedBy;
       
       await updateDoc(doc(db, COLLECTIONS.SUBMISSIONS, submissionId), updateData);
+    } catch (error) {
+      throw new Error(getFirebaseErrorMessage(error));
+    }
+  },
+
+  // Enhanced review submission with streak break handling
+  async reviewSubmissionWithStreakLogic(
+    submissionId: string,
+    status: 'approved' | 'rejected',
+    feedback: string,
+    reviewedBy: string,
+    studentUid: string
+  ): Promise<void> {
+    try {
+      const reviewData = {
+        status: status,
+        admin_feedback: feedback,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewedBy,
+        updated_at: new Date().toISOString(),
+        adminReview: {
+          status: status,
+          feedback: feedback,
+          reviewedAt: new Date(),
+          reviewedBy: reviewedBy
+        }
+      };
+
+      await updateDoc(doc(db, COLLECTIONS.SUBMISSIONS, submissionId), reviewData);
+
+      // If rejected, handle streak break logic and notifications
+      if (status === 'rejected') {
+        // Import services dynamically to avoid circular imports
+        const { usersService } = await import('./users');
+        const { authService } = await import('./auth');
+        const { notificationsService } = await import('./notifications');
+        
+        // Get current user data
+        const userData = await authService.getUserData(studentUid);
+        if (userData) {
+          const newStreakBreaks = userData.streak_breaks + 1;
+          const isDisqualified = newStreakBreaks >= 3;
+          
+          // Update user streak breaks and disqualification status
+          await usersService.updateUserStreak(
+            studentUid, 
+            userData.streak_count, // Keep current streak count
+            newStreakBreaks
+          );
+
+          // If disqualified, set flag
+          if (isDisqualified) {
+            await usersService.setUserDisqualification(studentUid, true);
+          }
+
+          // Send notification to student about rejection
+          await notificationsService.createNotification({
+            user_uid: studentUid,
+            type: 'violation',
+            title: isDisqualified ? '🚫 Disqualified from Challenge' : '⚠️ Submission Rejected',
+            message: isDisqualified 
+              ? `Your submission has been rejected. You have reached the maximum allowed streak breaks (3) and have been disqualified from the 45 Days of Code challenge. Admin feedback: ${feedback}`
+              : `Your submission has been rejected and a streak break has been added to your record (${newStreakBreaks}/3). Admin feedback: ${feedback}. Please ensure your future submissions meet the quality standards.`,
+            date: new Date().toISOString(),
+            read: false,
+            submission_id: submissionId,
+            action_required: !isDisqualified,
+            priority: isDisqualified ? 'urgent' : 'high'
+          });
+        }
+      } else if (status === 'approved') {
+        // Send approval notification
+        const { notificationsService } = await import('./notifications');
+        await notificationsService.createNotification({
+          user_uid: studentUid,
+          type: 'approval',
+          title: '✅ Submission Approved',
+          message: `Congratulations! Your submission has been approved. ${feedback ? `Admin feedback: ${feedback}` : 'Keep up the great work!'}`,
+          date: new Date().toISOString(),
+          read: false,
+          submission_id: submissionId,
+          action_required: false,
+          priority: 'medium'
+        });
+      }
     } catch (error) {
       throw new Error(getFirebaseErrorMessage(error));
     }

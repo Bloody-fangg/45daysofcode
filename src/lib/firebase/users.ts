@@ -27,6 +27,20 @@ export const usersService = {
     }
   },
 
+  // Get user data by UID
+  async getUserData(uid: string): Promise<UserData | null> {
+    try {
+      const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, uid));
+      if (userDoc.exists()) {
+        return userDoc.data() as UserData;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      return null;
+    }
+  },
+
   // Update user streak
   async updateUserStreak(uid: string, streakCount: number, streakBreaks?: number): Promise<void> {
     try {
@@ -151,6 +165,65 @@ export const usersService = {
       await updateDoc(doc(db, COLLECTIONS.USERS, uid), {
         streak_breaks: 0,
         disqualified: false,
+        updated_at: new Date().toISOString()
+      });
+    } catch (error) {
+      throw new Error(getFirebaseErrorMessage(error));
+    }
+  },
+
+  // Ban/Unban user (for admin)
+  async setUserBanStatus(uid: string, isBanned: boolean, banReason?: string): Promise<void> {
+    try {
+      const updateData: any = {
+        isBanned,
+        updated_at: new Date().toISOString()
+      };
+      
+      if (isBanned && banReason) {
+        updateData.banReason = banReason;
+        updateData.bannedAt = new Date().toISOString();
+      } else if (!isBanned) {
+        updateData.banReason = null;
+        updateData.bannedAt = null;
+      }
+
+      await updateDoc(doc(db, COLLECTIONS.USERS, uid), updateData);
+    } catch (error) {
+      throw new Error(getFirebaseErrorMessage(error));
+    }
+  },
+
+  // Submit daily summation
+  async submitDailySummation(uid: string, day: number, content: string): Promise<void> {
+    try {
+      const summationKey = `dailySummations.day_${day}`;
+      await updateDoc(doc(db, COLLECTIONS.USERS, uid), {
+        [summationKey]: {
+          day,
+          date: new Date().toISOString().split('T')[0],
+          content,
+          wordCount: content.split(/\s+/).filter(word => word.length > 0).length,
+          submittedAt: new Date().toISOString(),
+          reviewed: false
+        },
+        updated_at: new Date().toISOString()
+      });
+    } catch (error) {
+      throw new Error(getFirebaseErrorMessage(error));
+    }
+  },
+
+  // Review daily summation (admin)
+  async reviewDailySummation(uid: string, day: number, reviewNotes: string, reviewedBy: string, approved: boolean = true): Promise<void> {
+    try {
+      const summationKey = `dailySummations.day_${day}`;
+      await updateDoc(doc(db, COLLECTIONS.USERS, uid), {
+        [`${summationKey}.reviewed`]: true,
+        [`${summationKey}.approved`]: approved,
+        [`${summationKey}.reviewNotes`]: reviewNotes,
+        [`${summationKey}.reviewedAt`]: new Date().toISOString(),
+        [`${summationKey}.reviewedBy`]: reviewedBy,
         updated_at: new Date().toISOString()
       });
     } catch (error) {

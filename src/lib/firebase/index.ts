@@ -8,12 +8,14 @@ export { usersService } from './users';
 export { examCooldownService } from './examCooldown';
 export { scheduleService } from './scheduleService';
 export { registrationService } from './registration';
+export { qaService } from './qa';
 
 // Re-export types
 export type { Question } from './questions';
 export type { Submission } from './submissions';
 export type { Assignment, QuestionAssignment } from './assignments';
 export type { Notification } from './notifications';
-export type { ExamCooldown } from './examCooldown';
+export type { ExamCooldown, ProgramExamCooldown } from './examCooldown';
 export type { ScheduledAssignment, StreakCalculation } from './scheduleService';
 export type { RegistrationSettings } from './registration';
+export type { StudentQuestion } from './qa';

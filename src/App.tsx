@@ -65,8 +65,8 @@ const DashboardRouter = () => {
     );
   }
   
-  // Show admin dashboard if logged in with admin email
-  if (userData.email === 'amiarchive79.in@gmail.com') {
+  // Show admin dashboard if logged in with admin email OR if isAdmin is true
+  if (userData.email === 'amiarchive79.in@gmail.com' || userData.isAdmin) {
     return <AdminDashboard />;
   }
   

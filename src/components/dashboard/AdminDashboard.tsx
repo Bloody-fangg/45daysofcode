@@ -7,7 +7,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { 
   Table, 
   TableBody, 
@@ -45,7 +45,13 @@ import {
   Edit,
   Trash2,
   Hash,
-  GraduationCap
+  GraduationCap,
+  Ban,
+  Shield,
+  MessageSquare,
+  FileText,
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { 
   usersService, 
@@ -55,9 +61,12 @@ import {
   examCooldownService,
   scheduleService,
   registrationService,
+  qaService,
   type Submission,
   type ExamCooldown,
-  type RegistrationSettings
+  type ProgramExamCooldown,
+  type RegistrationSettings,
+  type StudentQuestion
 } from '../../lib/firebase/index';
 import { auth } from '../../lib/firebase';
 
@@ -75,18 +84,24 @@ interface SubmissionReviewModalProps {
   onClose: () => void;
   onApprove: (feedback: string) => void;
   onReject: (feedback: string) => void;
+  students: UserData[];
 }
 
 const SubmissionReviewModal: React.FC<SubmissionReviewModalProps> = ({ 
   submission, 
   onClose, 
   onApprove, 
-  onReject 
+  onReject,
+  students
 }) => {
   const [feedback, setFeedback] = useState('');
   const [action, setAction] = useState<'approve' | 'reject' | null>(null);
 
   if (!submission) return null;
+
+  const getStudentDataForSubmission = (submission: Submission) => {
+    return students.find(s => s.uid === submission.student_uid);
+  };
 
   const handleSubmit = () => {
     if (action === 'approve') {
@@ -152,6 +167,82 @@ const SubmissionReviewModal: React.FC<SubmissionReviewModalProps> = ({
                 <span className="text-sm">{new Date(submission.created_at).toLocaleString()}</span>
               </div>
             </div>
+          </div>
+
+          {/* Enhanced Student Statistics */}
+          <div className="bg-muted/30 rounded-lg p-4 border">
+            <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+              <User className="w-4 h-4" />
+              Student Performance Overview
+            </h3>
+            {(() => {
+              const studentData = getStudentDataForSubmission(submission);
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">{studentData?.streak_count || 0}</div>
+                    <div className="text-xs text-muted-foreground">Current Streak</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{studentData?.enrollment_no || 'N/A'}</div>
+                    <div className="text-xs text-muted-foreground">Enrollment</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{studentData?.streak_breaks || 0}</div>
+                    <div className="text-xs text-muted-foreground">Streak Breaks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">{(studentData as any)?.course || 'Not Set'}</div>
+                    <div className="text-xs text-muted-foreground">Course</div>
+                  </div>
+                </div>
+              );
+            })()}
+            
+            {/* Attempts Breakdown */}
+            <div className="mt-4 pt-3 border-t">
+              <div className="text-sm font-medium mb-2">Problem Attempts:</div>
+              {(() => {
+                const studentData = getStudentDataForSubmission(submission);
+                return (
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="text-center p-2 bg-green-50 rounded">
+                      <div className="font-medium text-green-700">{studentData?.attempts?.easy || 0}</div>
+                      <div className="text-xs text-green-600">Easy</div>
+                    </div>
+                    <div className="text-center p-2 bg-yellow-50 rounded">
+                      <div className="font-medium text-yellow-700">{studentData?.attempts?.medium || 0}</div>
+                      <div className="text-xs text-yellow-600">Medium</div>
+                    </div>
+                    <div className="text-center p-2 bg-red-50 rounded">
+                      <div className="font-medium text-red-700">{studentData?.attempts?.hard || 0}</div>
+                      <div className="text-xs text-red-600">Hard</div>
+                    </div>
+                    <div className="text-center p-2 bg-blue-50 rounded">
+                      <div className="font-medium text-blue-700">{studentData?.attempts?.choice || 0}</div>
+                      <div className="text-xs text-blue-600">Choice</div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            {/* Account Status */}
+            {(() => {
+              const studentData = getStudentDataForSubmission(submission);
+              return studentData?.disqualified ? (
+                <div className="mt-3 pt-3 border-t">
+                  <div className="flex items-center gap-2 p-2 bg-red-50 rounded border border-red-200">
+                    <Badge variant="destructive">DISQUALIFIED</Badge>
+                    {(studentData as any)?.ban_reason && (
+                      <span className="text-sm text-red-700">
+                        Reason: {(studentData as any).ban_reason}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : null;
+            })()}
           </div>
 
           {/* Links */}
@@ -272,11 +363,23 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showStudentDetails, setShowStudentDetails] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'students' | 'submissions' | 'assignments' | 'questions' | 'exams' | 'management'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'students' | 'submissions' | 'assignments' | 'questions' | 'qa' | 'exams' | 'management'>('overview');
+
+  // Ban management states
+  const [showBanDialog, setShowBanDialog] = useState(false);
+  const [banReason, setBanReason] = useState('');
+  const [banLoading, setBanLoading] = useState(false);
+  const [selectedSummationDay, setSelectedSummationDay] = useState<number | null>(null);
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [selectedDaySubmissions, setSelectedDaySubmissions] = useState<any[]>([]);
+  const [showDaySubmissionsModal, setShowDaySubmissionsModal] = useState(false);
+  const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(null);
+  const [daySubmissionsLoading, setDaySubmissionsLoading] = useState(false);
 
   // Filter states
-  const [courseFilter, setCourseFilter] = useState('');
-  const [sectionFilter, setSectionFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('all');
+  const [sectionFilter, setSectionFilter] = useState('all');
+  const [semesterFilter, setSemesterFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disqualified'>('all');
   const [submissionStatusFilter, setSubmissionStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
@@ -297,6 +400,12 @@ const AdminDashboard = () => {
   const [tempAssignmentDate, setTempAssignmentDate] = useState('');
   const [inlineEditingAssignment, setInlineEditingAssignment] = useState<string | null>(null);
 
+  // Assignment stats states
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [selectedAssignmentForStats, setSelectedAssignmentForStats] = useState<any>(null);
+  const [assignmentStats, setAssignmentStats] = useState<any>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
   // Exam management states
   const [examSettings, setExamSettings] = useState<ExamCooldown | null>(null);
   const [examLoading, setExamLoading] = useState(false);
@@ -307,6 +416,30 @@ const AdminDashboard = () => {
     pause_submissions_count: true,
     message: "📚 All The Best For Your Exams! Your streak is paused during this period."
   });
+
+  // Program-specific exam management states
+  const [programExamCooldowns, setProgramExamCooldowns] = useState<ProgramExamCooldown[]>([]);
+  const [programExamFormData, setProgramExamFormData] = useState({
+    program: '',
+    semester: '',
+    section: '',
+    active: false,
+    start_date: '',
+    end_date: '',
+    pause_submissions_count: true,
+    message: "📚 All The Best For Your Exams! Your streak is paused during this period."
+  });
+  const [showProgramExamForm, setShowProgramExamForm] = useState(false);
+  const [editingProgramExam, setEditingProgramExam] = useState<string | null>(null);
+
+  // QA management states
+  const [studentQuestions, setStudentQuestions] = useState<StudentQuestion[]>([]);
+  const [qaLoading, setQaLoading] = useState(false);
+  const [selectedQuestionForAnswer, setSelectedQuestionForAnswer] = useState<StudentQuestion | null>(null);
+  const [showAnswerDialog, setShowAnswerDialog] = useState(false);
+  const [answerText, setAnswerText] = useState('');
+  const [qaStatusFilter, setQaStatusFilter] = useState<'all' | 'pending' | 'answered' | 'closed'>('all');
+  const [qaPriorityFilter, setQaPriorityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
 
   // Management states for registration control
   const [registrationSettings, setRegistrationSettings] = useState<RegistrationSettings>({
@@ -457,7 +590,9 @@ const AdminDashboard = () => {
     fetchData();
     fetchAssignments();
     fetchExamSettings();
+    fetchProgramExamCooldowns();
     fetchRegistrationSettings();
+    fetchQAData();
   }, []);
 
   // Load exam settings
@@ -480,6 +615,24 @@ const AdminDashboard = () => {
       toast({
         title: 'Error',
         description: 'Failed to load exam settings',
+        variant: 'destructive'
+      });
+    } finally {
+      setExamLoading(false);
+    }
+  };
+
+  // Load program-specific exam cooldowns
+  const fetchProgramExamCooldowns = async () => {
+    try {
+      setExamLoading(true);
+      const cooldowns = await examCooldownService.getAllProgramExamCooldowns();
+      setProgramExamCooldowns(cooldowns);
+    } catch (error) {
+      console.error('Error fetching program exam cooldowns:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load program exam cooldowns',
         variant: 'destructive'
       });
     } finally {
@@ -526,6 +679,90 @@ const AdminDashboard = () => {
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to toggle exam mode'
+      });
+    } finally {
+      setExamLoading(false);
+    }
+  };
+
+  // Program-specific exam management functions
+  const handleCreateProgramExam = async () => {
+    try {
+      if (!programExamFormData.program || !programExamFormData.semester) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Program and semester are required'
+        });
+        return;
+      }
+
+      setExamLoading(true);
+      await examCooldownService.createProgramExamCooldown(programExamFormData);
+      await fetchProgramExamCooldowns();
+      setProgramExamFormData({
+        program: '',
+        semester: '',
+        section: '',
+        active: false,
+        start_date: '',
+        end_date: '',
+        pause_submissions_count: true,
+        message: "📚 All The Best For Your Exams! Your streak is paused during this period."
+      });
+      setShowProgramExamForm(false);
+      toast({
+        title: 'Success',
+        description: 'Program exam cooldown created successfully'
+      });
+    } catch (error) {
+      console.error('Error creating program exam cooldown:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to create program exam cooldown'
+      });
+    } finally {
+      setExamLoading(false);
+    }
+  };
+
+  const handleUpdateProgramExam = async (id: string, updates: Partial<ProgramExamCooldown>) => {
+    try {
+      setExamLoading(true);
+      await examCooldownService.updateProgramExamCooldown(id, updates);
+      await fetchProgramExamCooldowns();
+      toast({
+        title: 'Success',
+        description: 'Program exam cooldown updated successfully'
+      });
+    } catch (error) {
+      console.error('Error updating program exam cooldown:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update program exam cooldown'
+      });
+    } finally {
+      setExamLoading(false);
+    }
+  };
+
+  const handleDeleteProgramExam = async (id: string) => {
+    try {
+      setExamLoading(true);
+      await examCooldownService.deleteProgramExamCooldown(id);
+      await fetchProgramExamCooldowns();
+      toast({
+        title: 'Success',
+        description: 'Program exam cooldown deleted successfully'
+      });
+    } catch (error) {
+      console.error('Error deleting program exam cooldown:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete program exam cooldown'
       });
     } finally {
       setExamLoading(false);
@@ -600,6 +837,23 @@ const AdminDashboard = () => {
       });
     } finally {
       setManagementLoading(false);
+    }
+  };
+
+  const fetchQAData = async () => {
+    try {
+      setQaLoading(true);
+      const questions = await qaService.getAllQuestions();
+      setStudentQuestions(questions);
+    } catch (error) {
+      console.error('Error fetching QA data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load student questions',
+        variant: 'destructive'
+      });
+    } finally {
+      setQaLoading(false);
     }
   };
 
@@ -682,6 +936,11 @@ const AdminDashboard = () => {
     setShowReviewModal(true);
   };
 
+  // Function to get student data for a submission
+  const getStudentDataForSubmission = (submission: Submission) => {
+    return students.find(s => s.uid === submission.student_uid);
+  };
+
   const handleApproveSubmission = async (feedback: string) => {
     if (!selectedSubmission || !userData?.uid) return;
 
@@ -756,6 +1015,283 @@ const AdminDashboard = () => {
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to reject submission'
+      });
+    }
+  };
+
+  // Ban management functions
+  const handleBanStudent = async () => {
+    if (!selectedStudent || !banReason.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please provide a reason for banning this student'
+      });
+      return;
+    }
+
+    try {
+      setBanLoading(true);
+      await usersService.setUserBanStatus(selectedStudent.uid, true, banReason);
+      
+      toast({
+        title: 'Success',
+        description: `${selectedStudent.name} has been banned successfully`
+      });
+      
+      // Refresh data
+      await fetchData();
+      setShowBanDialog(false);
+      setBanReason('');
+      
+    } catch (error) {
+      console.error('Error banning student:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to ban student'
+      });
+    } finally {
+      setBanLoading(false);
+    }
+  };
+
+  const handleUnbanStudent = async () => {
+    if (!selectedStudent) return;
+
+    try {
+      setBanLoading(true);
+      await usersService.setUserBanStatus(selectedStudent.uid, false);
+      
+      toast({
+        title: 'Success',
+        description: `${selectedStudent.name} has been unbanned successfully`
+      });
+      
+      // Refresh data
+      await fetchData();
+      
+    } catch (error) {
+      console.error('Error unbanning student:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to unban student'
+      });
+    } finally {
+      setBanLoading(false);
+    }
+  };
+
+  const handleReviewSummation = async (day: number) => {
+    if (!selectedStudent || !reviewNotes.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please provide review notes'
+      });
+      return;
+    }
+
+    try {
+      await usersService.reviewDailySummation(
+        selectedStudent.uid, 
+        day, 
+        reviewNotes, 
+        userData?.name || 'Admin',
+        false // rejected
+      );
+      
+      // Increment streak breaks for rejection
+      await usersService.updateUserStreak(
+        selectedStudent.uid,
+        Math.max(0, selectedStudent.streak_count - 1),
+        (selectedStudent.streak_breaks || 0) + 1
+      );
+      
+      toast({
+        title: 'Summation Rejected',
+        description: `Day ${day} summation rejected. Student's streak break count increased.`
+      });
+      
+      // Refresh data
+      await fetchData();
+      setSelectedSummationDay(null);
+      setReviewNotes('');
+      
+    } catch (error) {
+      console.error('Error rejecting summation:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject summation'
+      });
+    }
+  };
+
+  const handleApproveSummation = async (day: number) => {
+    if (!selectedStudent || !reviewNotes.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please provide review notes before approving'
+      });
+      return;
+    }
+
+    try {
+      await usersService.reviewDailySummation(
+        selectedStudent.uid, 
+        day, 
+        reviewNotes, 
+        userData?.name || 'Admin',
+        true // approved
+      );
+      
+      toast({
+        title: 'Success',
+        description: `Day ${day} summation approved successfully`
+      });
+      
+      // Refresh data
+      await fetchData();
+      setSelectedSummationDay(null);
+      setReviewNotes('');
+      
+    } catch (error) {
+      console.error('Error approving summation:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to approve summation'
+      });
+    }
+  };
+
+  const handleViewDaySubmissions = async (day: number) => {
+    if (!selectedStudent) return;
+
+    try {
+      setDaySubmissionsLoading(true);
+      setSelectedDayNumber(day);
+      
+      // Fetch submissions for this specific day and student
+      const daySubmissions = submissions.filter(submission => 
+        submission.student_uid === selectedStudent.uid && 
+        submission.day_number === day
+      );
+      
+      setSelectedDaySubmissions(daySubmissions);
+      setShowDaySubmissionsModal(true);
+      
+    } catch (error) {
+      console.error('Error fetching day submissions:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load submissions for this day'
+      });
+    } finally {
+      setDaySubmissionsLoading(false);
+    }
+  };
+
+  const handleApproveSubmissionFromDay = async (submissionId: string, feedback: string) => {
+    try {
+      await submissionsService.updateSubmissionStatus(
+        submissionId,
+        'approved',
+        feedback,
+        userData?.uid || ''
+      );
+      
+      toast({
+        title: 'Success',
+        description: 'Submission approved successfully'
+      });
+      
+      // Refresh day submissions
+      if (selectedDayNumber) {
+        await handleViewDaySubmissions(selectedDayNumber);
+      }
+      await fetchData();
+      
+    } catch (error) {
+      console.error('Error approving submission:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to approve submission'
+      });
+    }
+  };
+
+  const handleRejectSubmissionFromDay = async (submissionId: string, feedback: string) => {
+    try {
+      await submissionsService.updateSubmissionStatus(
+        submissionId,
+        'rejected',
+        feedback,
+        userData?.uid || ''
+      );
+      
+      toast({
+        title: 'Success',
+        description: 'Submission rejected successfully'
+      });
+      
+      // Refresh day submissions
+      if (selectedDayNumber) {
+        await handleViewDaySubmissions(selectedDayNumber);
+      }
+      await fetchData();
+      
+    } catch (error) {
+      console.error('Error rejecting submission:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject submission'
+      });
+    }
+  };
+
+  const handleAutoApproveDaily = async () => {
+    try {
+      // This function should run at the end of each day
+      const today = new Date();
+      const currentDay = Math.floor((today.getTime() - new Date('2025-01-01').getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      
+      // Auto-approve all pending summations for the current day
+      const studentsWithPendingSummations = students.filter(student => 
+        student.dailySummations && 
+        student.dailySummations[`day_${currentDay}`] && 
+        !student.dailySummations[`day_${currentDay}`].reviewed
+      );
+
+      for (const student of studentsWithPendingSummations) {
+        await usersService.reviewDailySummation(
+          student.uid,
+          currentDay,
+          'Auto-approved at end of day',
+          'System',
+          true
+        );
+      }
+
+      toast({
+        title: 'Success',
+        description: `Auto-approved ${studentsWithPendingSummations.length} pending summations`
+      });
+
+      await fetchData();
+
+    } catch (error) {
+      console.error('Error auto-approving summations:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to auto-approve summations'
       });
     }
   };
@@ -894,10 +1430,10 @@ const AdminDashboard = () => {
         return;
       }
 
-      if (!inlineEditData.day_number || inlineEditData.day_number < 1 || inlineEditData.day_number > 55) {
+      if (!inlineEditData.day_number || inlineEditData.day_number < 1) {
         toast({
           title: 'Error',
-          description: 'Day number must be between 1 and 55'
+          description: 'Day number must be greater than 0'
         });
         return;
       }
@@ -1005,7 +1541,7 @@ const AdminDashboard = () => {
         // Calculate new day number based on new date
         const newDate = new Date(tempAssignmentDate);
         const daysDiff = Math.floor((newDate.getTime() - challengeStartDate.getTime()) / (1000 * 60 * 60 * 24));
-        const newDayNumber = Math.max(1, Math.min(55, daysDiff + 1));
+        const newDayNumber = Math.max(1, daysDiff + 1); // Remove 55-day limit
         
         updatedAssignment.date = tempAssignmentDate;
         updatedAssignment.day_number = newDayNumber;
@@ -1087,20 +1623,157 @@ const AdminDashboard = () => {
     }
   };
 
-  // Filter functions
+  // Enhanced delete function for assignments beyond day 55
+  const handleDeleteExtendedAssignment = async (assignment: any) => {
+    if (assignment.day_number <= 55) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot Delete',
+        description: 'Core program assignments (Days 1-55) cannot be deleted. You can only edit them.'
+      });
+      return;
+    }
+
+    try {
+      if (assignment.fromFirebase && assignment.id) {
+        await assignmentsService.deleteAssignment(assignment.id);
+      }
+      
+      // Remove from local state
+      setAllGeneratedDays(prev => prev.filter(a => a.id !== assignment.id));
+      
+      toast({
+        title: 'Success',
+        description: `Day ${assignment.day_number} assignment deleted successfully`
+      });
+      
+      await fetchAssignments();
+    } catch (error) {
+      console.error('Error deleting extended assignment:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete assignment'
+      });
+    }
+  };
+
+  // Function to fetch assignment statistics
+  const handleViewAssignmentStats = async (assignment: any) => {
+    try {
+      setStatsLoading(true);
+      setSelectedAssignmentForStats(assignment);
+      
+      // Fetch submissions for this specific assignment date
+      const assignmentSubmissions = submissions.filter(sub => 
+        sub.question_date === assignment.date
+      );
+      
+      // Calculate detailed stats for each difficulty level
+      const calculateQuestionStats = (difficulty: 'easy' | 'medium' | 'hard') => {
+        const questionSubmissions = assignmentSubmissions.filter(sub => 
+          sub.difficulty === difficulty
+        );
+        
+        const totalSubmissions = questionSubmissions.length;
+        const approvedSubmissions = questionSubmissions.filter(sub => 
+          sub.adminReview?.status === 'approved' || sub.status === 'approved'
+        ).length;
+        const rejectedSubmissions = questionSubmissions.filter(sub => 
+          sub.adminReview?.status === 'rejected' || sub.status === 'rejected'
+        ).length;
+        const pendingSubmissions = questionSubmissions.filter(sub => 
+          sub.adminReview?.status === 'pending' || 
+          sub.status === 'submitted' || 
+          !sub.adminReview
+        ).length;
+        
+        // Calculate completion rate for this question
+        const uniqueStudents = new Set(questionSubmissions.map(sub => sub.student_uid));
+        const completionRate = totalSubmissions > 0 ? 
+          Math.round((uniqueStudents.size / students.length) * 100) : 0;
+        
+        // Calculate average submission time (if timestamp available)
+        const avgSubmissionTime = questionSubmissions.length > 0 ? 
+          questionSubmissions.reduce((sum, sub) => {
+            const submitTime = new Date(sub.created_at).getTime();
+            const dayStart = new Date(assignment.date).getTime();
+            return sum + (submitTime - dayStart);
+          }, 0) / questionSubmissions.length : 0;
+        
+        return {
+          totalSubmissions,
+          approvedSubmissions,
+          rejectedSubmissions,
+          pendingSubmissions,
+          completionRate,
+          uniqueStudents: uniqueStudents.size,
+          avgSubmissionTime: Math.round(avgSubmissionTime / (1000 * 60 * 60)), // Convert to hours
+          approvalRate: totalSubmissions > 0 ? Math.round((approvedSubmissions / totalSubmissions) * 100) : 0
+        };
+      };
+      
+      // Get stats for each difficulty
+      const easyStats = assignment.easy_question.title ? calculateQuestionStats('easy') : null;
+      const mediumStats = assignment.medium_question.title ? calculateQuestionStats('medium') : null;
+      const hardStats = assignment.hard_question.title ? calculateQuestionStats('hard') : null;
+      
+      // Overall assignment stats
+      const totalUniqueStudents = new Set(assignmentSubmissions.map(sub => sub.student_uid));
+      const overallStats = {
+        totalSubmissions: assignmentSubmissions.length,
+        uniqueStudents: totalUniqueStudents.size,
+        completionRate: Math.round((totalUniqueStudents.size / students.length) * 100),
+        averageSubmissionsPerStudent: totalUniqueStudents.size > 0 ? 
+          Math.round((assignmentSubmissions.length / totalUniqueStudents.size) * 10) / 10 : 0,
+        mostPopularDifficulty: easyStats?.totalSubmissions >= (mediumStats?.totalSubmissions || 0) && 
+                               easyStats?.totalSubmissions >= (hardStats?.totalSubmissions || 0) ? 'Easy' :
+                               mediumStats?.totalSubmissions >= (hardStats?.totalSubmissions || 0) ? 'Medium' : 'Hard'
+      };
+      
+      setAssignmentStats({
+        assignment,
+        overallStats,
+        easyStats,
+        mediumStats,
+        hardStats,
+        submissionsList: assignmentSubmissions
+      });
+      
+      setShowStatsModal(true);
+      
+    } catch (error) {
+      console.error('Error fetching assignment stats:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load assignment statistics'
+      });
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // Filter functions with alphabetical sorting
   const filteredStudents = students.filter(student => {
-    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         student.enrollment_no.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (student.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (student.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (student.enrollment_no || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesCourse = !courseFilter || student.course === courseFilter;
-    const matchesSection = !sectionFilter || student.section === sectionFilter;
+    const matchesCourse = courseFilter === 'all' || !courseFilter || (student as any).course === courseFilter;
+    const matchesSection = sectionFilter === 'all' || !sectionFilter || (student as any).section === sectionFilter;
+    const matchesSemester = semesterFilter === 'all' || !semesterFilter || (student as any).semester === semesterFilter;
     const matchesStatus = statusFilter === 'all' || 
                          (statusFilter === 'active' && !student.disqualified) ||
                          (statusFilter === 'disqualified' && student.disqualified);
     
-    return matchesSearch && matchesCourse && matchesSection && matchesStatus;
-  });
+    return matchesSearch && matchesCourse && matchesSection && matchesSemester && matchesStatus;
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '')); // Sort alphabetically
+
+  // Get unique values for filter dropdowns
+  const uniqueCourses = [...new Set(students.map(s => (s as any).course).filter(Boolean))].sort();
+  const uniqueSections = [...new Set(students.map(s => (s as any).section).filter(Boolean))].sort();
+  const uniqueSemesters = [...new Set(students.map(s => (s as any).semester).filter(Boolean))].sort();
 
   const filteredSubmissions = submissions.filter(submission => {
     const matchesSearch = submission.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1169,6 +1842,7 @@ const AdminDashboard = () => {
               { id: 'submissions', label: 'Submissions', icon: BookOpen },
               { id: 'assignments', label: 'Assignments', icon: Calendar },
               { id: 'questions', label: 'Questions', icon: Code },
+              { id: 'qa', label: 'Q&A Support', icon: MessageSquare },
               { id: 'exams', label: 'Exam Management', icon: GraduationCap },
               { id: 'management', label: 'Management', icon: Settings }
             ].map((tab) => (
@@ -1188,20 +1862,23 @@ const AdminDashboard = () => {
           </div>
         </nav>
 
-        {/* Footer Actions */}
-        <div className="p-4 border-t space-y-2">
-          <Button 
-            variant="outline" 
+        {/* Footer Actions - Fixed at bottom */}
+        <div className="mt-auto p-4 border-t space-y-2">
+          <button
             onClick={fetchData}
             disabled={loading}
-            className="w-full flex items-center gap-2"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left font-medium text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
           >
-            <TrendingUp className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Refreshing...' : 'Refresh Data'}
-          </Button>
-          <Button variant="outline" onClick={logout} className="w-full">
+          </button>
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left font-medium text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <LogOut className="w-4 h-4" />
             Logout
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -1302,73 +1979,208 @@ const AdminDashboard = () => {
 
         {selectedTab === 'students' && (
           <div className="space-y-6">
-            {/* Search and Filters */}
-            <div className="flex gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search students..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Student Management</h1>
+                <p className="text-muted-foreground">
+                  Filter and view student details by program, section and semester
+                </p>
               </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="border rounded-md px-3 py-2"
-              >
-                <option value="all">All Students</option>
-                <option value="active">Active</option>
-                <option value="disqualified">Disqualified</option>
-              </select>
             </div>
 
-            {/* Students Table */}
+            {/* Enhanced Filters */}
             <Card>
               <CardHeader>
-                <CardTitle>Students ({filteredStudents.length})</CardTitle>
+                <CardTitle>Filter Students</CardTitle>
+                <CardDescription>
+                  Use filters to find specific students by course, semester, and section
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Enrollment</TableHead>
-                      <TableHead>Streak</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredStudents.map((student) => (
-                      <TableRow key={student.uid}>
-                        <TableCell className="font-medium">{student.name}</TableCell>
-                        <TableCell>{student.email}</TableCell>
-                        <TableCell>{student.enrollment_no}</TableCell>
-                        <TableCell>{student.streak_count}</TableCell>
-                        <TableCell>
-                          <Badge variant={student.disqualified ? "destructive" : "default"}>
-                            {student.disqualified ? "Disqualified" : "Active"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleViewStudent(student)}
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            View Details
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {/* Search */}
+                  <div className="lg:col-span-1">
+                    <Label htmlFor="search" className="text-sm font-medium">Search</Label>
+                    <div className="relative mt-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                      <Input
+                        id="search"
+                        placeholder="Search students..."
+                        className="pl-9"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Course Filter */}
+                  <div>
+                    <Label className="text-sm font-medium">Program/Course</Label>
+                    <Select value={courseFilter} onValueChange={setCourseFilter}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="All Programs" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Programs</SelectItem>
+                        {uniqueCourses.map((course) => (
+                          <SelectItem key={course} value={course}>{course}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Semester Filter */}
+                  <div>
+                    <Label className="text-sm font-medium">Semester</Label>
+                    <Select value={semesterFilter} onValueChange={setSemesterFilter}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="All Semesters" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Semesters</SelectItem>
+                        {uniqueSemesters.map((semester) => (
+                          <SelectItem key={semester} value={semester}>{semester}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Section Filter */}
+                  <div>
+                    <Label className="text-sm font-medium">Section</Label>
+                    <Select value={sectionFilter} onValueChange={setSectionFilter}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="All Sections" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sections</SelectItem>
+                        {uniqueSections.map((section) => (
+                          <SelectItem key={section} value={section}>{section}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Status Filter */}
+                  <div>
+                    <Label className="text-sm font-medium">Status</Label>
+                    <Select value={statusFilter} onValueChange={(value: 'all' | 'active' | 'disqualified') => setStatusFilter(value)}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="All Students" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Students</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="disqualified">Disqualified</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Filter Summary */}
+                <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {filteredStudents.length} of {students.length} students
+                    {courseFilter && courseFilter !== 'all' && ` • Course: ${courseFilter}`}
+                    {semesterFilter && semesterFilter !== 'all' && ` • Semester: ${semesterFilter}`}
+                    {sectionFilter && sectionFilter !== 'all' && ` • Section: ${sectionFilter}`}
+                    {statusFilter !== 'all' && ` • Status: ${statusFilter}`}
+                  </p>
+                </div>
               </CardContent>
             </Card>
+
+            {/* Students List */}
+            {filteredStudents.length === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">No Students Found</h3>
+                  <p className="text-muted-foreground">
+                    {students.length === 0 ? 'No students have registered yet.' : 'No students match your current filters.'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Students List</CardTitle>
+                  <CardDescription>
+                    {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''} found
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {filteredStudents.map((student) => (
+                      <div 
+                        key={student.uid} 
+                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          {/* Student Avatar */}
+                          <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                            <span className="text-lg font-semibold text-primary">
+                              {student.name?.charAt(0).toUpperCase() || 'U'}
+                            </span>
+                          </div>
+                          
+                          {/* Student Info */}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-1">
+                              <h3 className="font-semibold text-lg">{student.name || 'Unknown'}</h3>
+                              <Badge variant={student.disqualified ? "destructive" : "default"} className="text-xs">
+                                {student.disqualified ? "Disqualified" : "Active"}
+                              </Badge>
+                              {student.isBanned && (
+                                <Badge variant="destructive" className="text-xs bg-red-600 text-white">
+                                  <Ban className="w-3 h-3 mr-1" />
+                                  Banned
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-1">{student.email}</p>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span><strong>Program:</strong> {(student as any).course || 'N/A'}</span>
+                              <span><strong>Section:</strong> {(student as any).section || 'N/A'}</span>
+                              <span><strong>Semester:</strong> {(student as any).semester || 'N/A'}</span>
+                              <span><strong>Enrollment:</strong> {student.enrollment_no}</span>
+                            </div>
+                          </div>
+
+                          {/* Quick Stats */}
+                          <div className="hidden md:flex items-center gap-6 text-sm">
+                            <div className="text-center">
+                              <p className="font-bold text-blue-600">{student.streak_count}</p>
+                              <p className="text-xs text-muted-foreground">Streak</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="font-bold text-green-600">
+                                {(student.approved?.easy || 0) + (student.approved?.medium || 0) + (student.approved?.hard || 0) + (student.approved?.choice || 0)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">Approved</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="font-bold text-red-600">{student.violations}</p>
+                              <p className="text-xs text-muted-foreground">Violations</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* View Details Button */}
+                        <Button
+                          size="sm"
+                          onClick={() => handleViewStudent(student)}
+                          className="ml-4"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -1657,7 +2469,6 @@ const AdminDashboard = () => {
                                         <Input
                                           type="number"
                                           min="1"
-                                          max="55"
                                           value={inlineEditData?.day_number || 1}
                                           onChange={(e) => {
                                             setInlineEditData({
@@ -1668,21 +2479,6 @@ const AdminDashboard = () => {
                                           className="w-20 h-8 text-sm"
                                         />
                                       </div>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          const daysDiff = Math.floor((new Date(inlineEditData?.date || '').getTime() - challengeStartDate.getTime()) / (1000 * 60 * 60 * 24));
-                                          const calculatedDay = Math.max(1, Math.min(55, daysDiff + 1));
-                                          setInlineEditData({
-                                            ...inlineEditData,
-                                            day_number: calculatedDay
-                                          });
-                                        }}
-                                        className="h-8 text-xs"
-                                      >
-                                        Auto-Calculate Day
-                                      </Button>
                                     </div>
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                       <BookOpen className="w-4 h-4" />
@@ -2109,18 +2905,24 @@ const AdminDashboard = () => {
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 px-3 text-xs"
+                                onClick={() => handleViewAssignmentStats(assignment)}
+                                disabled={statsLoading}
                               >
                                 <BarChart3 className="w-3 h-3 mr-1" />
-                                View Stats
+                                {statsLoading && selectedAssignmentForStats?.id === assignment.id ? 'Loading...' : 'View Stats'}
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-3 text-xs"
-                              >
-                                <Send className="w-3 h-3 mr-1" />
-                                Notify Students
-                              </Button>
+                              {/* Delete button for assignments beyond day 55 */}
+                              {assignment.day_number > 55 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => handleDeleteExtendedAssignment(assignment)}
+                                >
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  Delete
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2230,6 +3032,242 @@ const AdminDashboard = () => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Assignment Statistics Modal */}
+        <Dialog open={showStatsModal} onOpenChange={setShowStatsModal}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center justify-between">
+                <DialogTitle className="text-2xl font-semibold">
+                  Day {assignmentStats?.assignment?.day_number} Assignment Statistics
+                </DialogTitle>
+                <Button variant="ghost" size="icon" onClick={() => setShowStatsModal(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <p className="text-muted-foreground">
+                {assignmentStats?.assignment?.date ? `Assignment Date: ${assignmentStats.assignment.date}` : 'No date assigned'}
+              </p>
+            </DialogHeader>
+
+            {assignmentStats && (
+              <div className="space-y-8">
+                {/* Overall Assignment Stats */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Overall Assignment Performance
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <Card className="p-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-blue-600">{assignmentStats.overallStats.totalSubmissions}</p>
+                        <p className="text-sm text-muted-foreground">Total Submissions</p>
+                      </div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-green-600">{assignmentStats.overallStats.uniqueStudents}</p>
+                        <p className="text-sm text-muted-foreground">Unique Students</p>
+                      </div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-purple-600">{assignmentStats.overallStats.completionRate}%</p>
+                        <p className="text-sm text-muted-foreground">Completion Rate</p>
+                      </div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-orange-600">{assignmentStats.overallStats.averageSubmissionsPerStudent}</p>
+                        <p className="text-sm text-muted-foreground">Avg Submissions/Student</p>
+                      </div>
+                    </Card>
+                  </div>
+                </div>
+
+                {/* Question-wise Breakdown */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Code className="w-5 h-5" />
+                    Question-wise Performance
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Easy Question Stats */}
+                    {assignmentStats.easyStats && (
+                      <Card className="p-6 border-green-200">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-green-500 rounded-full" />
+                            <h4 className="font-semibold text-green-800">Easy Question</h4>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Total Submissions:</span>
+                              <span className="font-medium">{assignmentStats.easyStats.totalSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approved:</span>
+                              <span className="font-medium text-green-600">{assignmentStats.easyStats.approvedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Rejected:</span>
+                              <span className="font-medium text-red-600">{assignmentStats.easyStats.rejectedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Pending:</span>
+                              <span className="font-medium text-yellow-600">{assignmentStats.easyStats.pendingSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Completion Rate:</span>
+                              <span className="font-medium">{assignmentStats.easyStats.completionRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approval Rate:</span>
+                              <span className="font-medium">{assignmentStats.easyStats.approvalRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Unique Students:</span>
+                              <span className="font-medium">{assignmentStats.easyStats.uniqueStudents}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+
+                    {/* Medium Question Stats */}
+                    {assignmentStats.mediumStats && (
+                      <Card className="p-6 border-yellow-200">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-yellow-500 rounded-full" />
+                            <h4 className="font-semibold text-yellow-800">Medium Question</h4>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Total Submissions:</span>
+                              <span className="font-medium">{assignmentStats.mediumStats.totalSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approved:</span>
+                              <span className="font-medium text-green-600">{assignmentStats.mediumStats.approvedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Rejected:</span>
+                              <span className="font-medium text-red-600">{assignmentStats.mediumStats.rejectedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Pending:</span>
+                              <span className="font-medium text-yellow-600">{assignmentStats.mediumStats.pendingSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Completion Rate:</span>
+                              <span className="font-medium">{assignmentStats.mediumStats.completionRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approval Rate:</span>
+                              <span className="font-medium">{assignmentStats.mediumStats.approvalRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Unique Students:</span>
+                              <span className="font-medium">{assignmentStats.mediumStats.uniqueStudents}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+
+                    {/* Hard Question Stats */}
+                    {assignmentStats.hardStats && (
+                      <Card className="p-6 border-red-200">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-red-500 rounded-full" />
+                            <h4 className="font-semibold text-red-800">Hard Question</h4>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Total Submissions:</span>
+                              <span className="font-medium">{assignmentStats.hardStats.totalSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approved:</span>
+                              <span className="font-medium text-green-600">{assignmentStats.hardStats.approvedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Rejected:</span>
+                              <span className="font-medium text-red-600">{assignmentStats.hardStats.rejectedSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Pending:</span>
+                              <span className="font-medium text-yellow-600">{assignmentStats.hardStats.pendingSubmissions}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Completion Rate:</span>
+                              <span className="font-medium">{assignmentStats.hardStats.completionRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Approval Rate:</span>
+                              <span className="font-medium">{assignmentStats.hardStats.approvalRate}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Unique Students:</span>
+                              <span className="font-medium">{assignmentStats.hardStats.uniqueStudents}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+
+                {/* Insights Section */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5" />
+                    Key Insights
+                  </h3>
+                  <Card className="p-6 bg-muted/50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="font-medium mb-2">Most Popular Choice</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Students preferred <span className="font-semibold">{assignmentStats.overallStats.mostPopularDifficulty}</span> difficulty questions for this assignment.
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="font-medium mb-2">Engagement Level</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {assignmentStats.overallStats.completionRate >= 80 ? 'Excellent' : 
+                           assignmentStats.overallStats.completionRate >= 60 ? 'Good' : 
+                           assignmentStats.overallStats.completionRate >= 40 ? 'Average' : 'Low'} student engagement 
+                          with {assignmentStats.overallStats.completionRate}% completion rate.
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setShowStatsModal(false)}>
+                    Close
+                  </Button>
+                  <Button onClick={() => {
+                    // Export stats functionality can be added here
+                    toast({
+                      title: 'Export Started',
+                      description: 'Assignment statistics export will be available soon.'
+                    });
+                  }}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Export Stats
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 
@@ -2765,6 +3803,305 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* Q&A Support Tab */}
+        {selectedTab === 'qa' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold">Q&A Support</h2>
+                <p className="text-muted-foreground">Manage student questions and provide support</p>
+              </div>
+              <div className="flex gap-2">
+                <Select value={qaStatusFilter} onValueChange={(value) => setQaStatusFilter(value as 'all' | 'pending' | 'answered' | 'closed')}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="answered">Answered</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={qaPriorityFilter} onValueChange={(value) => setQaPriorityFilter(value as 'all' | 'low' | 'medium' | 'high')}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priority</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button 
+                  onClick={async () => {
+                    setQaLoading(true);
+                    try {
+                      const questions = await qaService.getAllQuestions();
+                      setStudentQuestions(questions);
+                    } catch (error) {
+                      toast({
+                        title: "Error",
+                        description: "Failed to load questions",
+                        variant: "destructive"
+                      });
+                    }
+                    setQaLoading(false);
+                  }}
+                  disabled={qaLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${qaLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {/* Questions List */}
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Student Questions</CardTitle>
+                  <div className="flex gap-2">
+                    <Badge variant="secondary">
+                      {studentQuestions.filter(q => q.status === 'pending').length} Pending
+                    </Badge>
+                    <Badge variant="outline">
+                      {studentQuestions.length} Total
+                    </Badge>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {qaLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Loading questions...</p>
+                  </div>
+                ) : studentQuestions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No questions found</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {studentQuestions
+                      .filter(q => qaStatusFilter === 'all' || q.status === qaStatusFilter)
+                      .filter(q => qaPriorityFilter === 'all' || q.priority === qaPriorityFilter)
+                      .map((question) => (
+                        <div 
+                          key={question.id} 
+                          className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge 
+                                  variant={
+                                    question.status === 'pending' ? 'destructive' : 
+                                    question.status === 'answered' ? 'default' : 'secondary'
+                                  }
+                                >
+                                  {question.status}
+                                </Badge>
+                                <Badge 
+                                  variant={
+                                    question.priority === 'high' ? 'destructive' : 
+                                    question.priority === 'medium' ? 'default' : 'outline'
+                                  }
+                                >
+                                  {question.priority}
+                                </Badge>
+                                <Badge variant="outline">{question.category}</Badge>
+                              </div>
+                              <h4 className="font-semibold">{question.student_name}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {question.student_course} - Sem {question.student_semester} - {question.student_section}
+                              </p>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(question.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                          
+                          <div className="mb-3">
+                            <p className="text-sm">{question.question_text}</p>
+                          </div>
+
+                          {question.admin_response && (
+                            <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3">
+                              <p className="text-sm font-medium text-blue-800 mb-1">Admin Response:</p>
+                              <p className="text-sm text-blue-700">{question.admin_response}</p>
+                              <p className="text-xs text-blue-600 mt-1">
+                                Responded by {question.responded_by} on {question.responded_at ? new Date(question.responded_at).toLocaleString() : 'N/A'}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="flex gap-2">
+                            {question.status === 'pending' && (
+                              <Button 
+                                size="sm" 
+                                onClick={() => {
+                                  setSelectedQuestionForAnswer(question);
+                                  setAnswerText('');
+                                  setShowAnswerDialog(true);
+                                }}
+                              >
+                                <Send className="w-4 h-4 mr-1" />
+                                Answer
+                              </Button>
+                            )}
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  await qaService.updatePriority(
+                                    question.id!, 
+                                    question.priority === 'high' ? 'medium' : 'high',
+                                    'admin'
+                                  );
+                                  // Refresh questions
+                                  const questions = await qaService.getAllQuestions();
+                                  setStudentQuestions(questions);
+                                  toast({
+                                    title: "Priority Updated",
+                                    description: `Question priority changed to ${question.priority === 'high' ? 'medium' : 'high'}`
+                                  });
+                                } catch (error) {
+                                  toast({
+                                    title: "Error",
+                                    description: "Failed to update priority",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
+                            >
+                              Priority: {question.priority === 'high' ? 'Lower' : 'Raise'}
+                            </Button>
+                            {question.status !== 'closed' && (
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={async () => {
+                                  try {
+                                    await qaService.closeQuestion(question.id!);
+                                    // Refresh questions
+                                    const questions = await qaService.getAllQuestions();
+                                    setStudentQuestions(questions);
+                                    toast({
+                                      title: "Question Closed",
+                                      description: "Question has been closed"
+                                    });
+                                  } catch (error) {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to close question",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                }}
+                              >
+                                <X className="w-4 h-4 mr-1" />
+                                Close
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            
+            {/* Answer Dialog */}
+            {showAnswerDialog && selectedQuestionForAnswer && (
+              <Dialog open={showAnswerDialog} onOpenChange={setShowAnswerDialog}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Answer Question</DialogTitle>
+                    <DialogDescription>
+                      Responding to {selectedQuestionForAnswer.student_name}'s question
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 border rounded p-3">
+                      <p className="text-sm font-medium mb-1">Student Question:</p>
+                      <p className="text-sm">{selectedQuestionForAnswer.question_text}</p>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="answer">Your Response</Label>
+                      <Textarea
+                        id="answer"
+                        value={answerText}
+                        onChange={(e) => setAnswerText(e.target.value)}
+                        placeholder="Type your answer here..."
+                        rows={6}
+                        className="mt-1"
+                      />
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => setShowAnswerDialog(false)}
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={async () => {
+                          if (!answerText.trim()) {
+                            toast({
+                              title: "Answer Required",
+                              description: "Please enter an answer before submitting",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+
+                          try {
+                            await qaService.answerQuestion(
+                              selectedQuestionForAnswer.id!,
+                              answerText,
+                              currentUser?.uid || '',
+                              userData?.name || 'Admin'
+                            );
+                            
+                            // Refresh questions
+                            const questions = await qaService.getAllQuestions();
+                            setStudentQuestions(questions);
+                            
+                            setShowAnswerDialog(false);
+                            setAnswerText('');
+                            setSelectedQuestionForAnswer(null);
+                            
+                            toast({
+                              title: "Answer Sent",
+                              description: "Your response has been sent to the student"
+                            });
+                          } catch (error) {
+                            toast({
+                              title: "Error",
+                              description: "Failed to send answer",
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        Send Answer
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        )}
+
         {/* Exam Management Section */}
         {selectedTab === 'exams' && (
           <div className="space-y-8">
@@ -2941,6 +4278,257 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Program-Specific Exam Management */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Program-Specific Exam Cooldowns</span>
+                  <Button
+                    onClick={() => setShowProgramExamForm(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Program Exam
+                  </Button>
+                </CardTitle>
+                <CardDescription>
+                  Set different exam periods for different programs and semesters
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {programExamCooldowns.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <GraduationCap className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No program-specific exam cooldowns configured</p>
+                      <p className="text-sm">Click "Add Program Exam" to create one</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {programExamCooldowns.map((cooldown) => (
+                        <div key={cooldown.id} className="border rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                              <div className={`px-2 py-1 rounded text-xs font-medium ${
+                                cooldown.active 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {cooldown.active ? 'Active' : 'Inactive'}
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Badge variant="outline">{cooldown.program}</Badge>
+                                <Badge variant="outline">Sem {cooldown.semester}</Badge>
+                                {cooldown.section && (
+                                  <Badge variant="outline">Sec {cooldown.section}</Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUpdateProgramExam(cooldown.id, { 
+                                  active: !cooldown.active 
+                                })}
+                                disabled={examLoading}
+                              >
+                                {cooldown.active ? 'Deactivate' : 'Activate'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteProgramExam(cooldown.id)}
+                                disabled={examLoading}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+                            <div>
+                              <span className="font-medium">Period:</span> {cooldown.start_date} to {cooldown.end_date}
+                            </div>
+                            <div>
+                              <span className="font-medium">Streak Protection:</span> {cooldown.pause_submissions_count ? 'Yes' : 'No'}
+                            </div>
+                          </div>
+                          {cooldown.message && (
+                            <div className="mt-2 p-2 bg-blue-50 rounded text-sm text-blue-800">
+                              {cooldown.message}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Program Exam Form Modal */}
+            <Dialog open={showProgramExamForm} onOpenChange={setShowProgramExamForm}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Add Program-Specific Exam Cooldown</DialogTitle>
+                  <DialogDescription>
+                    Configure exam period for specific program and semester
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Program/Course</Label>
+                      <Select
+                        value={programExamFormData.program}
+                        onValueChange={(value) => setProgramExamFormData(prev => ({
+                          ...prev,
+                          program: value
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select program/course" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="B.Tech CSE">B.Tech Computer Science Engineering</SelectItem>
+                          <SelectItem value="B.Tech IT">B.Tech Information Technology</SelectItem>
+                          <SelectItem value="B.Tech ECE">B.Tech Electronics & Communication</SelectItem>
+                          <SelectItem value="B.Tech ME">B.Tech Mechanical Engineering</SelectItem>
+                          <SelectItem value="B.Tech CE">B.Tech Civil Engineering</SelectItem>
+                          <SelectItem value="B.Tech EE">B.Tech Electrical Engineering</SelectItem>
+                          <SelectItem value="BCA">Bachelor of Computer Applications</SelectItem>
+                          <SelectItem value="MCA">Master of Computer Applications</SelectItem>
+                          <SelectItem value="M.Tech CSE">M.Tech Computer Science Engineering</SelectItem>
+                          <SelectItem value="M.Tech IT">M.Tech Information Technology</SelectItem>
+                          <SelectItem value="MBA">Master of Business Administration</SelectItem>
+                          <SelectItem value="BBA">Bachelor of Business Administration</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Semester</Label>
+                      <Select
+                        value={programExamFormData.semester}
+                        onValueChange={(value) => setProgramExamFormData(prev => ({
+                          ...prev,
+                          semester: value
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select semester" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1,2,3,4,5,6,7,8].map(sem => (
+                            <SelectItem key={sem} value={sem.toString()}>
+                              Semester {sem}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Section (Optional)</Label>
+                    <Input
+                      placeholder="e.g., A, B, C (leave empty for all sections)"
+                      value={programExamFormData.section}
+                      onChange={(e) => setProgramExamFormData(prev => ({
+                        ...prev,
+                        section: e.target.value
+                      }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Start Date</Label>
+                      <Input
+                        type="date"
+                        value={programExamFormData.start_date}
+                        onChange={(e) => setProgramExamFormData(prev => ({
+                          ...prev,
+                          start_date: e.target.value
+                        }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>End Date</Label>
+                      <Input
+                        type="date"
+                        value={programExamFormData.end_date}
+                        onChange={(e) => setProgramExamFormData(prev => ({
+                          ...prev,
+                          end_date: e.target.value
+                        }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Exam Message</Label>
+                    <Textarea
+                      placeholder="Message to show to students during exam period"
+                      value={programExamFormData.message}
+                      onChange={(e) => setProgramExamFormData(prev => ({
+                        ...prev,
+                        message: e.target.value
+                      }))}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="program_pause_submissions"
+                      checked={programExamFormData.pause_submissions_count}
+                      onChange={(e) => setProgramExamFormData(prev => ({
+                        ...prev,
+                        pause_submissions_count: e.target.checked
+                      }))}
+                      className="rounded border-gray-300"
+                    />
+                    <Label htmlFor="program_pause_submissions" className="text-sm">
+                      Pause submission counting (protect streaks during exam period)
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="program_active"
+                      checked={programExamFormData.active}
+                      onChange={(e) => setProgramExamFormData(prev => ({
+                        ...prev,
+                        active: e.target.checked
+                      }))}
+                      className="rounded border-gray-300"
+                    />
+                    <Label htmlFor="program_active" className="text-sm">
+                      Activate immediately after creation
+                    </Label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowProgramExamForm(false)}
+                      disabled={examLoading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCreateProgramExam}
+                      disabled={examLoading}
+                    >
+                      {examLoading ? 'Creating...' : 'Create Program Exam'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Enhanced Scheduling Info */}
             <Card>
@@ -3130,8 +4718,758 @@ const AdminDashboard = () => {
           }}
           onApprove={handleApproveSubmission}
           onReject={handleRejectSubmission}
+          students={students}
         />
       )}
+
+      {/* Student Details Modal - Full Page Profile */}
+      {showStudentDetails && selectedStudent && (
+        <Dialog open={showStudentDetails} onOpenChange={setShowStudentDetails}>
+          <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+            <DialogHeader className="border-b pb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+                  <span className="text-2xl font-bold text-primary">
+                    {selectedStudent.name?.charAt(0).toUpperCase() || 'U'}
+                  </span>
+                </div>
+                <div>
+                  <DialogTitle className="text-2xl">{selectedStudent.name || 'Unknown Student'}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">{selectedStudent.email}</DialogDescription>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={!selectedStudent.disqualified ? "default" : "destructive"}>
+                      {!selectedStudent.disqualified ? 'Active' : 'Disqualified'}
+                    </Badge>
+                    {selectedStudent.isBanned && (
+                      <Badge variant="destructive">
+                        <Ban className="w-3 h-3 mr-1" />
+                        Banned
+                      </Badge>
+                    )}
+                    <Badge variant="outline">
+                      {selectedStudent.enrollment_no || 'No Enrollment'}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {selectedStudent.isBanned ? (
+                    <Button
+                      variant="outline"
+                      onClick={handleUnbanStudent}
+                      disabled={banLoading}
+                      className="text-green-600 hover:text-green-700"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      {banLoading ? 'Unbanning...' : 'Unban Student'}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      onClick={() => setShowBanDialog(true)}
+                      className="text-white"
+                    >
+                      <Ban className="w-4 h-4 mr-2" />
+                      Ban Student
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 py-6">
+              {/* Left Column - Personal & Academic Info */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Personal Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Personal Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Full Name</label>
+                      <p className="text-base font-medium">{selectedStudent.name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Email Address</label>
+                      <p className="text-base">{selectedStudent.email}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Enrollment Number</label>
+                      <p className="text-base font-mono">{selectedStudent.enrollment_no || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Registration Date</label>
+                      <p className="text-base">
+                        {selectedStudent.created_at 
+                          ? new Date(selectedStudent.created_at).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })
+                          : 'N/A'
+                        }
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Academic Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Academic Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Program/Course</label>
+                      <p className="text-base font-medium">{selectedStudent.course || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Section</label>
+                      <p className="text-base">{selectedStudent.section || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Semester</label>
+                      <p className="text-base">{selectedStudent.semester || 'N/A'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* GitHub Repository */}
+                {selectedStudent.github_repo_link && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">GitHub Repository</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <a 
+                        href={selectedStudent.github_repo_link} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline break-all"
+                      >
+                        {selectedStudent.github_repo_link}
+                      </a>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              {/* Right Column - Performance & Statistics */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Performance Overview */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Performance Overview</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div className="text-center p-4 bg-blue-50 rounded-lg">
+                        <p className="text-3xl font-bold text-blue-600">{selectedStudent.streak_count}</p>
+                        <p className="text-sm text-muted-foreground">Current Streak</p>
+                      </div>
+                      <div className="text-center p-4 bg-orange-50 rounded-lg">
+                        <p className="text-3xl font-bold text-orange-600">{selectedStudent.streak_breaks}</p>
+                        <p className="text-sm text-muted-foreground">Streak Breaks</p>
+                      </div>
+                      <div className="text-center p-4 bg-red-50 rounded-lg">
+                        <p className="text-3xl font-bold text-red-600">{selectedStudent.violations}</p>
+                        <p className="text-sm text-muted-foreground">Violations</p>
+                      </div>
+                      <div className="text-center p-4 bg-green-50 rounded-lg">
+                        <p className="text-3xl font-bold text-green-600">
+                          {(selectedStudent.approved?.easy || 0) + (selectedStudent.approved?.medium || 0) + (selectedStudent.approved?.hard || 0) + (selectedStudent.approved?.choice || 0)}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Total Approved</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Submission Statistics */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Submission Statistics</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="text-center p-4 border rounded-lg">
+                        <div className="text-green-600 mb-2">
+                          <p className="text-2xl font-bold">{selectedStudent.approved?.easy || 0}</p>
+                          <p className="text-sm text-muted-foreground">Approved</p>
+                        </div>
+                        <div className="text-gray-600">
+                          <p className="text-lg">{selectedStudent.attempts?.easy || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Attempts</p>
+                        </div>
+                        <p className="text-xs font-medium text-green-600 mt-2">EASY</p>
+                      </div>
+                      
+                      <div className="text-center p-4 border rounded-lg">
+                        <div className="text-yellow-600 mb-2">
+                          <p className="text-2xl font-bold">{selectedStudent.approved?.medium || 0}</p>
+                          <p className="text-sm text-muted-foreground">Approved</p>
+                        </div>
+                        <div className="text-gray-600">
+                          <p className="text-lg">{selectedStudent.attempts?.medium || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Attempts</p>
+                        </div>
+                        <p className="text-xs font-medium text-yellow-600 mt-2">MEDIUM</p>
+                      </div>
+                      
+                      <div className="text-center p-4 border rounded-lg">
+                        <div className="text-red-600 mb-2">
+                          <p className="text-2xl font-bold">{selectedStudent.approved?.hard || 0}</p>
+                          <p className="text-sm text-muted-foreground">Approved</p>
+                        </div>
+                        <div className="text-gray-600">
+                          <p className="text-lg">{selectedStudent.attempts?.hard || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Attempts</p>
+                        </div>
+                        <p className="text-xs font-medium text-red-600 mt-2">HARD</p>
+                      </div>
+                      
+                      <div className="text-center p-4 border rounded-lg">
+                        <div className="text-purple-600 mb-2">
+                          <p className="text-2xl font-bold">{selectedStudent.approved?.choice || 0}</p>
+                          <p className="text-sm text-muted-foreground">Approved</p>
+                        </div>
+                        <div className="text-gray-600">
+                          <p className="text-lg">{selectedStudent.attempts?.choice || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Attempts</p>
+                        </div>
+                        <p className="text-xs font-medium text-purple-600 mt-2">CHOICE</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 45-Day Summation Progress */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      45-Day Summation Progress
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {/* Progress Overview */}
+                      <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="text-center p-3 bg-green-50 rounded-lg">
+                          <p className="text-2xl font-bold text-green-600">
+                            {selectedStudent.dailySummations ? Object.keys(selectedStudent.dailySummations).length : 0}
+                          </p>
+                          <p className="text-sm text-muted-foreground">Submitted</p>
+                        </div>
+                        <div className="text-center p-3 bg-blue-50 rounded-lg">
+                          <p className="text-2xl font-bold text-blue-600">
+                            {selectedStudent.dailySummations ? 
+                              Object.values(selectedStudent.dailySummations).filter(s => s.reviewed && s.approved).length : 0
+                            }
+                          </p>
+                          <p className="text-sm text-muted-foreground">Approved</p>
+                        </div>
+                        <div className="text-center p-3 bg-red-50 rounded-lg">
+                          <p className="text-2xl font-bold text-red-600">
+                            {selectedStudent.dailySummations ? 
+                              Object.values(selectedStudent.dailySummations).filter(s => s.reviewed && !s.approved).length : 0
+                            }
+                          </p>
+                          <p className="text-sm text-muted-foreground">Rejected</p>
+                        </div>
+                      </div>
+
+                      {/* Daily Summations Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
+                        {Array.from({ length: 45 }, (_, i) => i + 1).map(day => {
+                          const summation = selectedStudent.dailySummations?.[`day_${day}`];
+                          const hasSubmission = !!summation;
+                          const isReviewed = summation?.reviewed || false;
+                          const isApproved = summation?.approved || false;
+                          
+                          // Check if there are question submissions for this day
+                          const daySubmissions = submissions.filter(sub => 
+                            sub.student_uid === selectedStudent.uid && sub.day_number === day
+                          );
+                          const hasQuestionSubmissions = daySubmissions.length > 0;
+                          
+                          return (
+                            <Button
+                              key={day}
+                              variant="outline"
+                              className={`h-auto p-3 flex-col items-start justify-start text-left transition-all hover:scale-105 ${
+                                isReviewed && isApproved 
+                                  ? 'bg-green-50 border-green-300 hover:bg-green-100' 
+                                  : isReviewed && !isApproved
+                                  ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                                  : hasSubmission || hasQuestionSubmissions
+                                  ? 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100' 
+                                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                              }`}
+                              onClick={() => handleViewDaySubmissions(day)}
+                              disabled={daySubmissionsLoading}
+                            >
+                              <div className="w-full">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                      isReviewed && isApproved 
+                                        ? 'bg-green-500 text-white' 
+                                        : isReviewed && !isApproved
+                                        ? 'bg-red-500 text-white'
+                                        : hasSubmission || hasQuestionSubmissions
+                                        ? 'bg-yellow-500 text-white' 
+                                        : 'bg-gray-300 text-gray-600'
+                                    }`}>
+                                      {day}
+                                    </div>
+                                    <span className="text-sm font-medium">Day {day}</span>
+                                  </div>
+                                  
+                                  <div className="flex gap-1">
+                                    {isReviewed && isApproved && (
+                                      <CheckCircle className="w-4 h-4 text-green-600" />
+                                    )}
+                                    {isReviewed && !isApproved && (
+                                      <X className="w-4 h-4 text-red-600" />
+                                    )}
+                                    {!isReviewed && (hasSubmission || hasQuestionSubmissions) && (
+                                      <Clock className="w-4 h-4 text-yellow-600" />
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <div className="space-y-1 text-xs w-full">
+                                  {hasSubmission && (
+                                    <div className="flex items-center gap-1">
+                                      <FileText className="w-3 h-3" />
+                                      <span>{summation.wordCount} words summation</span>
+                                    </div>
+                                  )}
+                                  
+                                  {hasQuestionSubmissions && (
+                                    <div className="flex items-center gap-1">
+                                      <Code className="w-3 h-3" />
+                                      <span>{daySubmissions.length} question submission{daySubmissions.length > 1 ? 's' : ''}</span>
+                                    </div>
+                                  )}
+                                  
+                                  {!hasSubmission && !hasQuestionSubmissions && (
+                                    <span className="text-muted-foreground">No submissions</span>
+                                  )}
+                                  
+                                  {hasQuestionSubmissions && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {daySubmissions.map(sub => (
+                                        <Badge 
+                                          key={sub.id} 
+                                          variant={
+                                            sub.status === 'approved' ? 'default' : 
+                                            sub.status === 'rejected' ? 'destructive' : 'secondary'
+                                          }
+                                          className="text-xs px-1 py-0"
+                                        >
+                                          {sub.difficulty.charAt(0).toUpperCase()}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {isReviewed && summation?.reviewNotes && (
+                                  <div className="mt-2 p-2 bg-white/50 rounded text-xs w-full">
+                                    <p className="text-muted-foreground truncate">
+                                      Review: {summation.reviewNotes.substring(0, 30)}...
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </Button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Auto-approve button */}
+                      <div className="mt-4 pt-4 border-t">
+                        <Button
+                          variant="outline"
+                          onClick={handleAutoApproveDaily}
+                          className="w-full"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Auto-Approve All Pending (End of Day)
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-6 border-t">
+              <Button
+                variant="outline"
+                onClick={() => setShowStudentDetails(false)}
+              >
+                Close Profile
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Day Submissions Modal */}
+
+      {/* Day Submissions Modal */}
+      <Dialog open={showDaySubmissionsModal} onOpenChange={setShowDaySubmissionsModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Day {selectedDayNumber} Submissions - {selectedStudent?.name}</DialogTitle>
+            <DialogDescription>
+              Review all submissions for this day. You can approve or reject individual submissions.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {daySubmissionsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Daily Summation Section */}
+              {selectedStudent?.dailySummations?.[`day_${selectedDayNumber}`] && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      Daily Summation
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const summation = selectedStudent.dailySummations[`day_${selectedDayNumber}`];
+                      return (
+                        <div className="space-y-4">
+                          <div className="p-4 bg-gray-50 rounded-lg">
+                            <p className="text-sm whitespace-pre-wrap">{summation.content}</p>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span>Words: {summation.wordCount}</span>
+                              <span>Submitted: {new Date(summation.submittedAt).toLocaleDateString()}</span>
+                              <Badge variant={
+                                summation.reviewed 
+                                  ? summation.approved 
+                                    ? "default" 
+                                    : "destructive"
+                                  : "secondary"
+                              }>
+                                {summation.reviewed 
+                                  ? summation.approved 
+                                    ? "Approved" 
+                                    : "Rejected"
+                                  : "Pending Review"
+                                }
+                              </Badge>
+                            </div>
+                            {!summation.reviewed && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => setSelectedSummationDay(selectedDayNumber)}
+                                >
+                                  Review Summation
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Question Submissions Section */}
+              {selectedDaySubmissions.length > 0 ? (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Question Submissions</h3>
+                  {selectedDaySubmissions.map((submission) => (
+                    <Card key={submission.id}>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Code className="w-4 h-4" />
+                            {submission.question_title} 
+                            <Badge variant={
+                              submission.difficulty === 'easy' ? 'default' :
+                              submission.difficulty === 'medium' ? 'secondary' :
+                              submission.difficulty === 'hard' ? 'destructive' : 'outline'
+                            }>
+                              {submission.difficulty.toUpperCase()}
+                            </Badge>
+                          </CardTitle>
+                          <Badge variant={
+                            submission.status === 'approved' ? 'default' :
+                            submission.status === 'rejected' ? 'destructive' : 'secondary'
+                          }>
+                            {submission.status.toUpperCase()}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">Repository Link:</label>
+                            <a 
+                              href={submission.github_link} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="block text-blue-600 hover:text-blue-800 underline text-sm mt-1"
+                            >
+                              {submission.github_link}
+                            </a>
+                          </div>
+                          
+                          {submission.comments && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">Student Comments:</label>
+                              <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{submission.comments}</p>
+                            </div>
+                          )}
+                          
+                          {submission.feedback && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">Admin Feedback:</label>
+                              <p className="text-sm mt-1 p-2 bg-blue-50 rounded">{submission.feedback}</p>
+                            </div>
+                          )}
+                          
+                          <div className="text-xs text-muted-foreground">
+                            Submitted: {new Date(submission.submitted_at).toLocaleString()}
+                            {submission.reviewed_at && (
+                              <> • Reviewed: {new Date(submission.reviewed_at).toLocaleString()}</>
+                            )}
+                          </div>
+                          
+                          {submission.status === 'pending' && (
+                            <div className="flex gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  const feedback = prompt('Enter feedback for approval:');
+                                  if (feedback) {
+                                    handleApproveSubmissionFromDay(submission.id!, feedback);
+                                  }
+                                }}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  const feedback = prompt('Enter feedback for rejection:');
+                                  if (feedback) {
+                                    handleRejectSubmissionFromDay(submission.id!, feedback);
+                                  }
+                                }}
+                              >
+                                <X className="w-4 h-4 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No question submissions found for this day.
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="flex justify-end pt-4 border-t">
+            <Button variant="outline" onClick={() => setShowDaySubmissionsModal(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ban Student Dialog */}
+      <Dialog open={showBanDialog} onOpenChange={setShowBanDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Ban Student</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to ban {selectedStudent?.name}? This action will prevent them from accessing the system.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="banReason">Reason for Ban *</Label>
+              <Textarea
+                id="banReason"
+                placeholder="Enter the reason for banning this student..."
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                className="mt-1"
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowBanDialog(false);
+                setBanReason('');
+              }}
+              disabled={banLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBanStudent}
+              disabled={banLoading || !banReason.trim()}
+            >
+              {banLoading ? 'Banning...' : 'Ban Student'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Summation Review Dialog */}
+      <Dialog open={selectedSummationDay !== null} onOpenChange={() => setSelectedSummationDay(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Review Day {selectedSummationDay} Summation
+            </DialogTitle>
+            <DialogDescription>
+              Review and provide feedback for {selectedStudent?.name}'s daily summation.
+              <span className="text-red-600 font-medium"> Note: Rejecting will increase the student's streak break count.</span>
+            </DialogDescription>
+          </DialogHeader>
+          {selectedSummationDay !== null && selectedStudent?.dailySummations?.[`day_${selectedSummationDay}`] && (
+            <div className="space-y-6 py-4">
+              {/* Summation Content */}
+              <div>
+                <Label className="text-sm font-medium">Student's Summation Content:</Label>
+                <div className="mt-2 p-4 bg-gray-50 rounded-lg border max-h-60 overflow-y-auto">
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                    {selectedStudent.dailySummations[`day_${selectedSummationDay}`].content}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Word Count:</span>
+                    <span>{selectedStudent.dailySummations[`day_${selectedSummationDay}`].wordCount}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Submitted:</span>
+                    <span>{new Date(selectedStudent.dailySummations[`day_${selectedSummationDay}`].submittedAt).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Time:</span>
+                    <span>{new Date(selectedStudent.dailySummations[`day_${selectedSummationDay}`].submittedAt).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Day:</span>
+                    <span>{selectedSummationDay}/45</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Review Notes Section */}
+              <div>
+                <Label htmlFor="reviewNotes" className="text-sm font-medium">
+                  Feedback Notes <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="reviewNotes"
+                  placeholder="Provide detailed feedback on the student's summation. Be specific about what was good and what could be improved..."
+                  value={reviewNotes}
+                  onChange={(e) => setReviewNotes(e.target.value)}
+                  className="mt-1"
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This feedback will be visible to the student regardless of approval/rejection.
+                </p>
+              </div>
+
+              {/* Warning for Rejection */}
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5" />
+                  <div className="text-xs text-red-700">
+                    <p className="font-medium">Impact of Rejection:</p>
+                    <ul className="list-disc list-inside mt-1 space-y-1">
+                      <li>Student's streak break count will increase by 1</li>
+                      <li>Current streak will be reduced by 1</li>
+                      <li>If streak breaks reach 3, student will be disqualified</li>
+                      <li>Student will receive notification about the rejection</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex justify-between pt-6 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelectedSummationDay(null);
+                setReviewNotes('');
+              }}
+            >
+              Cancel
+            </Button>
+            
+            <div className="flex gap-3">
+              <Button
+                variant="destructive"
+                onClick={() => selectedSummationDay && handleReviewSummation(selectedSummationDay)}
+                disabled={!reviewNotes.trim()}
+                className="flex items-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                Reject Summation
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => {
+                  if (selectedSummationDay && reviewNotes.trim()) {
+                    handleApproveSummation(selectedSummationDay);
+                  } else if (!reviewNotes.trim()) {
+                    toast({
+                      variant: 'destructive',
+                      title: 'Error',
+                      description: 'Please provide feedback notes before approving'
+                    });
+                  }
+                }}
+                disabled={!reviewNotes.trim()}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Approve Summation
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

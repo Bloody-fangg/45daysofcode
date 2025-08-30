@@ -9,8 +9,9 @@ import {
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../firebase';
 import { Assignment, assignmentsService } from './assignments';
-import { examCooldownService, ExamCooldown } from './examCooldown';
+import { examCooldownService, ExamCooldown, ProgramExamCooldown } from './examCooldown';
 import { submissionsService } from './submissions';
+import { usersService } from './users';
 
 export interface ScheduledAssignment extends Assignment {
   isVisible: boolean; // Whether this assignment should be visible to students
@@ -72,7 +73,7 @@ export const scheduleService = {
   },
 
   // Get today's active assignment (if any)
-  async getTodaysAssignment(): Promise<ScheduledAssignment | null> {
+  async getTodaysAssignment(studentUid?: string): Promise<ScheduledAssignment | null> {
     try {
       const today = new Date().toISOString().split('T')[0];
       const assignment = await assignmentsService.getAssignment(today);
@@ -81,9 +82,33 @@ export const scheduleService = {
         return null;
       }
       
-      // Check if we're in exam period
+      // Check if we're in exam period (global or program-specific)
+      let isInExamPeriod = false;
+      
+      // Check global exam settings
       const examSettings = await examCooldownService.getExamCooldown();
-      const isInExamPeriod = examSettings ? examCooldownService.isExamPeriod(examSettings) : false;
+      const isInGlobalExamPeriod = examSettings ? examCooldownService.isExamPeriod(examSettings) : false;
+      
+      // Check program-specific exam settings if student data is available
+      let isInProgramExamPeriod = false;
+      if (studentUid) {
+        try {
+          const studentData = await usersService.getUserData(studentUid);
+          if (studentData) {
+            const programExamCooldown = await examCooldownService.getExamCooldownForStudent(
+              studentData.course,
+              studentData.semester,
+              studentData.section
+            );
+            isInProgramExamPeriod = programExamCooldown ? 
+              examCooldownService.isStudentInExamPeriod(programExamCooldown) : false;
+          }
+        } catch (error) {
+          console.warn('Could not fetch student data for exam check:', error);
+        }
+      }
+      
+      isInExamPeriod = isInGlobalExamPeriod || isInProgramExamPeriod;
       
       return {
         ...assignment,
@@ -107,8 +132,20 @@ export const scheduleService = {
       // Get all scheduled assignments (those with dates)
       const scheduledAssignments = await this.getVisibleAssignments();
       
-      // Get exam cooldown settings
+      // Get student data for program-specific exam checking
+      const studentData = await usersService.getUserData(studentUid);
+      
+      // Get exam cooldown settings (both global and program-specific)
       const examSettings = await examCooldownService.getExamCooldown();
+      let programExamCooldown: ProgramExamCooldown | null = null;
+      
+      if (studentData) {
+        programExamCooldown = await examCooldownService.getExamCooldownForStudent(
+          studentData.course,
+          studentData.semester,
+          studentData.section
+        );
+      }
       
       // Create sets of important dates
       const submissionDates = new Set(
@@ -124,10 +161,11 @@ export const scheduleService = {
       );
       
       const examDays: string[] = [];
+      const programExamDays: string[] = [];
       const scheduledDays = Array.from(scheduledDates).sort();
       const missedDays: string[] = [];
       
-      // Calculate exam period dates if active
+      // Calculate global exam period dates if active
       if (examSettings && examSettings.active && examSettings.start_date && examSettings.end_date) {
         const startDate = new Date(examSettings.start_date);
         const endDate = new Date(examSettings.end_date);
@@ -137,17 +175,46 @@ export const scheduleService = {
         }
       }
       
+      // Calculate program-specific exam period dates if active
+      if (programExamCooldown && programExamCooldown.active && 
+          programExamCooldown.start_date && programExamCooldown.end_date) {
+        const startDate = new Date(programExamCooldown.start_date);
+        const endDate = new Date(programExamCooldown.end_date);
+        
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          programExamDays.push(d.toISOString().split('T')[0]);
+        }
+      }
+      
+      // Combine all exam days
+      const allExamDays = [...new Set([...examDays, ...programExamDays])];
+      
+      // Handle streak continuation after program exam ends
+      let daysSinceExamEnded = 0;
+      if (programExamCooldown) {
+        daysSinceExamEnded = examCooldownService.getDaysSinceExamEnded(programExamCooldown);
+      }
+      
       // Find missed days (scheduled assignments not submitted)
       scheduledDays.forEach((date: string) => {
         const dateObj = new Date(date);
         const today = new Date();
-        const isExamDay = examDays.includes(date);
+        const isExamDay = allExamDays.includes(date);
         
         // Only count as missed if:
         // 1. Date has passed
         // 2. Not an exam day
         // 3. No approved submission
+        // 4. Not within the grace period after exam ended
         if (dateObj < today && !isExamDay && !submissionDates.has(date)) {
+          // If exam just ended, give some grace period for streak continuation
+          if (daysSinceExamEnded > 0 && daysSinceExamEnded <= 3) {
+            // Grace period: don't count as missed if within 3 days after exam
+            const daysDiff = Math.floor((today.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysDiff <= daysSinceExamEnded + 2) {
+              return; // Skip this as missed
+            }
+          }
           missedDays.push(date);
         }
       });
@@ -160,10 +227,10 @@ export const scheduleService = {
       const recentScheduledDates = scheduledDays.slice().reverse();
       
       for (const date of recentScheduledDates) {
-        const dateStr = date as string; // Type assertion for the loop variable
+        const dateStr = date as string;
         const dateObj = new Date(dateStr);
         const today = new Date();
-        const isExamDay = examDays.includes(dateStr);
+        const isExamDay = allExamDays.includes(dateStr);
         
         // Skip future dates
         if (dateObj > today) continue;
@@ -172,7 +239,15 @@ export const scheduleService = {
           currentStreak++;
           if (!lastSubmissionDate) lastSubmissionDate = dateStr;
         } else if (!isExamDay) {
-          // Break streak only if it's not an exam day
+          // Check if this missed day is within grace period after exam
+          if (daysSinceExamEnded > 0) {
+            const daysDiff = Math.floor((today.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysDiff <= daysSinceExamEnded + 2) {
+              // Within grace period, continue streak
+              continue;
+            }
+          }
+          // Break streak only if it's not an exam day and not in grace period
           break;
         }
         // If it's an exam day, continue counting (don't break streak)
@@ -183,12 +258,13 @@ export const scheduleService = {
       const nextRequiredDate: string | undefined = (scheduledDays as string[]).find((date: string) => date > today);
       
       // Determine if streak is active
-      const isStreakActive = currentStreak > 0 || examDays.includes(today);
+      const isCurrentlyInExam = allExamDays.includes(today);
+      const isStreakActive = currentStreak > 0 || isCurrentlyInExam;
       
       // Determine streak break reason
       let streakBreakReason: StreakCalculation['streakBreakReason'];
       if (!isStreakActive) {
-        if (examDays.includes(today)) {
+        if (isCurrentlyInExam) {
           streakBreakReason = 'exam_period';
         } else if (!scheduledDates.has(today)) {
           streakBreakReason = 'no_assignment_scheduled';
@@ -204,7 +280,7 @@ export const scheduleService = {
         lastSubmissionDate,
         nextRequiredDate,
         missedDays,
-        examDays,
+        examDays: allExamDays,
         scheduledDays: scheduledDays as string[]
       };
     } catch (error) {
@@ -226,11 +302,36 @@ export const scheduleService = {
     assignment?: ScheduledAssignment;
   }> {
     try {
-      const todaysAssignment = await this.getTodaysAssignment();
+      const todaysAssignment = await this.getTodaysAssignment(studentUid);
+      
+      // Check if we're in exam period (global or program-specific)
+      let isInExamPeriod = false;
+      
+      // Check global exam settings
       const examSettings = await examCooldownService.getExamCooldown();
+      const isInGlobalExamPeriod = examSettings ? examCooldownService.isExamPeriod(examSettings) : false;
+      
+      // Check program-specific exam settings
+      let isInProgramExamPeriod = false;
+      try {
+        const studentData = await usersService.getUserData(studentUid);
+        if (studentData) {
+          const programExamCooldown = await examCooldownService.getExamCooldownForStudent(
+            studentData.course,
+            studentData.semester,
+            studentData.section
+          );
+          isInProgramExamPeriod = programExamCooldown ? 
+            examCooldownService.isStudentInExamPeriod(programExamCooldown) : false;
+        }
+      } catch (error) {
+        console.warn('Could not fetch student data for exam check:', error);
+      }
+      
+      isInExamPeriod = isInGlobalExamPeriod || isInProgramExamPeriod;
       
       // Check if we're in exam period
-      if (examSettings && examCooldownService.isExamPeriod(examSettings)) {
+      if (isInExamPeriod) {
         return {
           canSubmit: false,
           reason: 'exam_period'

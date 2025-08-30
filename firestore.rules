@@ -1,4 +1,4 @@
-// Firestore Security Rules for 45 Days of Code Platform
+// Enhanced Firestore Security Rules for 45 Days of Code Platform
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -8,7 +8,9 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'amiarchive79.in@gmail.com';
+      return isAuthenticated() && 
+        (request.auth.token.email == 'amiarchive79.in@gmail.com' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
     }
     
     function isOwner(userId) {
@@ -20,6 +22,20 @@ service cloud.firestore {
         'uid', 'name', 'enrollment_no', 'email', 'course', 
         'section', 'semester', 'streak_count', 'streak_breaks',
         'disqualified', 'attempts', 'calendar', 'created_at', 'updated_at'
+      ]);
+    }
+    
+    function isValidSubmission() {
+      return request.resource.data.keys().hasAll([
+        'student_uid', 'student_name', 'student_email', 'assignment_id',
+        'question_title', 'difficulty', 'code_text', 'status', 'created_at'
+      ]);
+    }
+    
+    function isValidQuestion() {
+      return request.resource.data.keys().hasAll([
+        'student_uid', 'student_name', 'student_email', 'question_text',
+        'status', 'priority', 'created_at'
       ]);
     }
     
@@ -36,15 +52,44 @@ service cloud.firestore {
       
       // Only admins can delete users
       allow delete: if isAdmin();
+      
+      // Daily summations subcollection
+      match /daily_summations/{summationId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+      
+      // User analytics subcollection
+      match /analytics/{analyticsId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isAdmin();
+      }
     }
     
-    // Questions collection rules
+    // Questions collection rules (for assignments)
     match /questions/{questionId} {
       // Anyone authenticated can read questions
       allow read: if isAuthenticated();
       
       // Only admins can create, update, or delete questions
       allow write: if isAdmin();
+    }
+    
+    // Student Questions collection (Q&A system)
+    match /student_questions/{questionId} {
+      // Students can read their own questions, admins can read all
+      allow read: if isAuthenticated() && 
+        (resource.data.student_uid == request.auth.uid || isAdmin());
+      
+      // Students can create questions for themselves
+      allow create: if isAuthenticated() && 
+        request.resource.data.student_uid == request.auth.uid && isValidQuestion();
+      
+      // Only admins can update questions (for answering)
+      allow update: if isAdmin();
+      
+      // Students can delete their own pending questions, admins can delete any
+      allow delete: if isAdmin() || 
+        (isOwner(resource.data.student_uid) && resource.data.status == 'pending');
     }
     
     // Assignments collection rules
@@ -64,13 +109,37 @@ service cloud.firestore {
       
       // Users can create submissions for themselves
       allow create: if isAuthenticated() && 
-        request.resource.data.student_uid == request.auth.uid;
+        request.resource.data.student_uid == request.auth.uid && isValidSubmission();
       
-      // Only admins can update submissions (for status changes)
+      // Only admins can update submissions (for review/status changes)
       allow update: if isAdmin();
       
       // Only admins can delete submissions
       allow delete: if isAdmin();
+      
+      // Admin reviews subcollection
+      match /reviews/{reviewId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
+      }
+    }
+    
+    // Notifications collection rules
+    match /notifications/{notificationId} {
+      // Users can read their own notifications, admins can read all
+      allow read: if isAuthenticated() && 
+        (resource.data.user_uid == request.auth.uid || isAdmin());
+      
+      // Only system/admins can create notifications
+      allow create: if isAdmin();
+      
+      // Users can update their own notifications (mark as read), admins can update any
+      allow update: if isAuthenticated() && 
+        (resource.data.user_uid == request.auth.uid || isAdmin());
+      
+      // Users can delete their own notifications, admins can delete any
+      allow delete: if isAuthenticated() && 
+        (resource.data.user_uid == request.auth.uid || isAdmin());
     }
     
     // Exam cooldown settings
@@ -79,6 +148,15 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       
       // Only admins can modify exam settings
+      allow write: if isAdmin();
+    }
+    
+    // Program-specific exam cooldowns
+    match /program_exam_cooldowns/{document} {
+      // Anyone authenticated can read program exam settings
+      allow read: if isAuthenticated();
+      
+      // Only admins can modify program exam settings
       allow write: if isAdmin();
     }
     
@@ -94,6 +172,23 @@ service cloud.firestore {
     // Analytics collection (admin only)
     match /analytics/{document} {
       allow read, write: if isAdmin();
+    }
+    
+    // Admin logs collection (admin only)
+    match /admin_logs/{document} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Maintenance mode collection
+    match /maintenance/{document} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Platform statistics
+    match /platform_stats/{document} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }

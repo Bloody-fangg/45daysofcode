@@ -38,6 +38,7 @@ export const COLLECTIONS = {
   ASSIGNMENTS: 'assignments',
   NOTIFICATIONS: 'notifications',
   EXAM_COOLDOWN: 'exam_cooldown',
+  PROGRAM_EXAM_COOLDOWNS: 'program_exam_cooldowns',
   ANALYTICS: 'analytics'
 } as const;
 

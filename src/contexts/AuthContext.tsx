@@ -15,6 +15,9 @@ export interface UserData {
   streak_count: number;
   streak_breaks: number;
   disqualified: boolean;
+  isBanned?: boolean;
+  banReason?: string;
+  bannedAt?: string;
   attempts: {
     easy: number;
     medium: number;
@@ -29,6 +32,18 @@ export interface UserData {
   };
   violations: number;
   calendar: Record<string, 'completed' | 'missed' | 'paused'>;
+  dailySummations?: Record<string, {
+    day: number;
+    date: string;
+    content: string;
+    wordCount: number;
+    submittedAt: string;
+    reviewed?: boolean;
+    approved?: boolean;
+    reviewNotes?: string;
+    reviewedAt?: string;
+    reviewedBy?: string;
+  }>;
   last_submission: string;
   created_at: string;
   updated_at: string;
