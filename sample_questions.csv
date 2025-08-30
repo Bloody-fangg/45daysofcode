@@ -1,0 +1,8 @@
+ID,TITLE,Description,Difficulty,Category,Tags,Example,Constraint,Upload Date,Question link
+1,CLEAR DAY,Find the first day when the weather is clear,easy,Array,"array, search, conditions","Input: [1,0,1,0,1] Output: 1","1 ≤ N ≤ 1000",2024-12-01,https://www.codechef.com/practice/course/basic-programming-concepts/DIFF500/problems/CLEARDAY
+2,BIRYANI CLASS,Calculate total biryani portions needed,medium,Math,"math, calculation","Input: 5 3 Output: 15",,2024-12-02,https://www.codechef.com/practice/course/basic-programming-concepts/DIFF500/problems/BIRYANI
+3,DON DRIVE ME,Find the total distance covered,easy,Array,"array, sum","Input: [5,2,3] Output: 10",1 ≤ N ≤ 100,2024-12-03,https://www.codechef.com/practice/course/basic-programming-concepts/DIFF500/problems/DONDRIVE
+4,REACH ON TIME,Check if Chef can reach on time,medium,Logic,"time, conditions","Input: 5 2 3 Output: YES",,2024-12-04,https://www.codechef.com/practice/course/basic-programming-concepts/DIFF500/problems/TIMELY
+5,BULL OR BEAR,Compare two stock prices,hard,Implementation,"conditions, comparison","Input: 10 15 Output: BULL","1 ≤ price ≤ 1000",2024-12-05,https://www.codechef.com/practice/course/basic-programming-concepts/DIFF500/problems/BULLORB
+6,EMPTY EXAMPLE,This question has some empty fields,,,"tag1, tag2",,,,https://example.com/problem6
+7,MINIMAL QUESTION,Just the required fields,easy,,,,,2024-12-07,https://example.com/problem7

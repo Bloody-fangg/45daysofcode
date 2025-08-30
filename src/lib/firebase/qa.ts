@@ -5,6 +5,7 @@ import {
   getDoc, 
   getDocs, 
   updateDoc, 
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -251,6 +252,15 @@ export const qaService = {
       }
       
       await updateDoc(doc(db, 'student_questions', questionId), updateData);
+    } catch (error) {
+      throw new Error(getFirebaseErrorMessage(error));
+    }
+  },
+
+  // Delete question permanently
+  async deleteQuestion(questionId: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, 'student_questions', questionId));
     } catch (error) {
       throw new Error(getFirebaseErrorMessage(error));
     }

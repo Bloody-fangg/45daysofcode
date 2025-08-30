@@ -8,6 +8,8 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { Checkbox } from '../ui/checkbox';
+import Papa from 'papaparse';
 import { 
   Table, 
   TableBody, 
@@ -363,7 +365,7 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showStudentDetails, setShowStudentDetails] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'students' | 'submissions' | 'assignments' | 'questions' | 'qa' | 'exams' | 'management'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'students' | 'submissions' | 'assignments' | 'questions' | 'qa' | 'exams' | 'management'>('students');
 
   // Ban management states
   const [showBanDialog, setShowBanDialog] = useState(false);
@@ -451,6 +453,16 @@ const AdminDashboard = () => {
   const [managementLoading, setManagementLoading] = useState(false);
   const [inlineEditData, setInlineEditData] = useState<any>(null);
 
+  // Bulk upload states
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkUploadLoading, setBulkUploadLoading] = useState(false);
+  const [bulkUploadError, setBulkUploadError] = useState<string | null>(null);
+  const [bulkUploadSuccess, setBulkUploadSuccess] = useState<string | null>(null);
+
+  // Multiple selection states for assignments
+  const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
+  const [isSelectAllChecked, setIsSelectAllChecked] = useState(false);
+
   // Auto-calculate day number based on challenge start date
   const challengeStartDate = new Date('2024-12-01'); // Adjust this to your actual challenge start date
   
@@ -461,7 +473,7 @@ const AdminDashboard = () => {
     for (let day = 1; day <= numDays; day++) {
       // Don't pre-assign dates - let admin choose them
       allDays.push({
-        id: `day-${day}`,
+        id: `template-day-${day}`, // More specific ID to avoid conflicts
         day_number: day,
         date: '', // Empty date - admin will assign
         easy_question: {
@@ -495,16 +507,30 @@ const AdminDashboard = () => {
   
   // Combine Firebase data with generated day templates
   const combinedAssignments = useMemo(() => {
+    console.log('🔄 COMBINED ASSIGNMENTS - Recalculating combined assignments...');
+    console.log('🔄 COMBINED ASSIGNMENTS - Firebase assignments:', assignments.length);
+    
     // Create a map of all saved assignments by their day_number (not date)
     const savedAssignmentsByDay = new Map();
     const savedAssignmentsByDate = new Map();
     
-    assignments.forEach(assignment => {
+    assignments.forEach((assignment, index) => {
+      console.log(`🔄 COMBINED ASSIGNMENTS - Processing Firebase assignment ${index + 1}:`, {
+        id: assignment.id,
+        date: assignment.date,
+        day_number: assignment.day_number,
+        day_number_type: typeof assignment.day_number,
+        easy_description: assignment.easy_question?.description || 'No description',
+        hasEasyDescription: !!assignment.easy_question?.description && assignment.easy_question.description !== 'Description to be added later'
+      });
+      
       if (assignment.day_number) {
         savedAssignmentsByDay.set(assignment.day_number, assignment);
+        console.log(`🔄 COMBINED ASSIGNMENTS - Added to savedAssignmentsByDay - Key: ${assignment.day_number}, Type: ${typeof assignment.day_number}`);
       }
       if (assignment.date) {
         savedAssignmentsByDate.set(assignment.date, assignment);
+        console.log(`🔄 COMBINED ASSIGNMENTS - Added to savedAssignmentsByDate - Key: ${assignment.date}`);
       }
     });
     
@@ -521,21 +547,64 @@ const AdminDashboard = () => {
     }
     
     // Start with all generated day templates (supports unlimited extension)
-    const combined = currentGeneratedDays.map(template => {
+    const combined = currentGeneratedDays.map((template, index) => {
+      console.log(`🔄 COMBINED ASSIGNMENTS - Processing template day ${template.day_number}:`);
+      console.log(`🔄 COMBINED ASSIGNMENTS - Template day_number: ${template.day_number}, Type: ${typeof template.day_number}`);
+      console.log(`🔄 COMBINED ASSIGNMENTS - Looking for saved assignment with day_number: ${template.day_number}`);
+      
       const saved = savedAssignmentsByDay.get(template.day_number);
+      console.log(`🔄 COMBINED ASSIGNMENTS - Found saved assignment:`, saved ? 'YES' : 'NO');
+      
       if (saved) {
-        return { ...saved, fromFirebase: true };
+        console.log(`🔄 COMBINED ASSIGNMENTS - Using Firebase data for day ${template.day_number}:`, {
+          id: saved.id,
+          date: saved.date,
+          easy_description: saved.easy_question?.description || 'No description',
+          hasEasyDescription: !!saved.easy_question?.description && saved.easy_question.description !== 'Description to be added later'
+        });
+        // Ensure unique ID for Firebase assignments
+        return { 
+          ...saved, 
+          id: saved.id || `day-${template.day_number}`, 
+          fromFirebase: true 
+        };
       }
-      return { ...template, fromFirebase: false };
+      
+      console.log(`🔄 COMBINED ASSIGNMENTS - Using template data for day ${template.day_number} (no Firebase data found)`);
+      // Ensure unique ID for template assignments
+      return { 
+        ...template, 
+        fromFirebase: false 
+      };
     });
 
     // Add any additional assignments from Firebase that don't fit the day template model
     assignments.forEach(assignment => {
       if (!assignment.day_number || assignment.day_number > currentGeneratedDays.length) {
+        console.log(`🔄 COMBINED ASSIGNMENTS - Adding extended assignment:`, {
+          id: assignment.id,
+          date: assignment.date,
+          day_number: assignment.day_number
+        });
         // This is an assignment that extends beyond our current template
-        combined.push({ ...assignment, fromFirebase: true });
+        // Ensure unique ID for extended assignments
+        combined.push({ 
+          ...assignment, 
+          id: assignment.id || `extended-${assignment.date || Date.now()}`, 
+          fromFirebase: true 
+        });
       }
     });
+
+    console.log(`🔄 COMBINED ASSIGNMENTS - Final combined assignments count: ${combined.length}`);
+    console.log(`🔄 COMBINED ASSIGNMENTS - Sample combined assignments:`, combined.slice(0, 3).map(a => ({
+      id: a.id,
+      date: a.date,
+      day_number: a.day_number,
+      fromFirebase: a.fromFirebase,
+      easy_description: a.easy_question?.description || 'No description',
+      hasEasyDescription: !!a.easy_question?.description && a.easy_question.description !== 'Description to be added later'
+    })));
 
     return combined.sort((a, b) => {
       // Sort by day_number first, then by date if day_number is missing
@@ -594,6 +663,403 @@ const AdminDashboard = () => {
     fetchRegistrationSettings();
     fetchQAData();
   }, []);
+
+  // Bulk CSV upload handler
+  const handleBulkUploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setBulkUploadLoading(true);
+    setBulkUploadError(null);
+    setBulkUploadSuccess(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results: any) => {
+        try {
+          const rows = results.data;
+          let successCount = 0;
+          let errorCount = 0;
+          const errors: string[] = [];
+
+          console.log('Processing CSV rows:', rows.length);
+
+          // Process each row from the CSV
+          for (const [index, row] of rows.entries()) {
+            try {
+              console.log(`Processing row ${index + 1}:`, row);
+
+              // Helper function to safely extract values with better debugging
+              const getValue = (value: any): string => {
+                if (value === null || value === undefined) {
+                  return '';
+                }
+                if (value === '' || value === 'null' || value === 'undefined') {
+                  return '';
+                }
+                const stringValue = String(value).trim();
+                return stringValue;
+              };
+
+              // Debug: Log the entire row to see what PapaParse extracted
+              console.log(`Row ${index + 1} raw data:`, row);
+              console.log(`Row ${index + 1} keys:`, Object.keys(row));
+
+              // Helper function to parse different date formats
+              const parseDate = (dateStr: string): string => {
+                if (!dateStr) return '';
+                
+                // Try different date formats
+                const formats = [
+                  // ISO formats
+                  /^\d{4}-\d{2}-\d{2}$/,           // 2024-12-01
+                  /^\d{4}\/\d{2}\/\d{2}$/,         // 2024/12/01
+                  /^\d{2}\/\d{2}\/\d{4}$/,         // 12/01/2024 or 01/12/2024
+                  /^\d{2}-\d{2}-\d{4}$/,           // 12-01-2024 or 01-12-2024
+                  /^\d{1,2}\/\d{1,2}\/\d{4}$/,     // 1/12/2024 or 12/1/2024
+                  /^\d{1,2}-\d{1,2}-\d{4}$/,       // 1-12-2024 or 12-1-2024
+                ];
+                
+                try {
+                  // First try to parse as is (for ISO format)
+                  let parsedDate = new Date(dateStr);
+                  if (!isNaN(parsedDate.getTime())) {
+                    return parsedDate.toISOString().split('T')[0];
+                  }
+                  
+                  // Try different manual parsing approaches
+                  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+                    // Handle MM/DD/YYYY or DD/MM/YYYY format
+                    const [part1, part2, year] = dateStr.split('/');
+                    // Assume MM/DD/YYYY format first
+                    parsedDate = new Date(parseInt(year), parseInt(part1) - 1, parseInt(part2));
+                    if (!isNaN(parsedDate.getTime())) {
+                      return parsedDate.toISOString().split('T')[0];
+                    }
+                  }
+                  
+                  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+                    // Handle MM-DD-YYYY or DD-MM-YYYY format
+                    const [part1, part2, year] = dateStr.split('-');
+                    parsedDate = new Date(parseInt(year), parseInt(part1) - 1, parseInt(part2));
+                    if (!isNaN(parsedDate.getTime())) {
+                      return parsedDate.toISOString().split('T')[0];
+                    }
+                  }
+                  
+                  // If all parsing fails, return empty string
+                  console.warn(`Could not parse date: ${dateStr}`);
+                  return '';
+                  
+                } catch (error) {
+                  console.warn(`Date parsing error for "${dateStr}":`, error);
+                  return '';
+                }
+              };
+
+              // Helper function to get day number with better validation
+              const getDayNumber = (): number => {
+                const dayValue = getValue(row['ID'] || row['Day'] || row['day_number'] || row['id'] || row['Day Number']);
+                if (!dayValue) return 0;
+                const parsed = parseInt(dayValue);
+                return isNaN(parsed) ? 0 : parsed;
+              };
+
+              // Get basic fields with flexible column name matching
+              const dayNumber = getDayNumber();
+              const title = getValue(row['TITLE'] || row['Title'] || row['title'] || row['Question'] || row['question']) || `Question for Day ${dayNumber || 'TBD'}`;
+              
+              // Enhanced description extraction - try ALL possible variations and log them
+              const descriptionKeys = ['Description', 'description', 'DESCRIPTION', 'desc', 'Desc', 'DESC', 
+                                     'Problem Description', 'problem_description', 'Question Description', 'question_description',
+                                     'Details', 'details', 'DETAILS', 'Problem', 'problem', 'PROBLEM'];
+              
+              let rawDescription = '';
+              let foundKey = '';
+              
+              // Try each key until we find a non-empty value
+              for (const key of descriptionKeys) {
+                const value = row[key];
+                if (value !== null && value !== undefined && value !== '') {
+                  rawDescription = value;
+                  foundKey = key;
+                  break;
+                }
+              }
+              
+              const description = getValue(rawDescription);
+              
+              // Extensive debugging for description field
+              console.log(`Row ${index + 1} DESCRIPTION DEBUG:`, {
+                availableKeys: Object.keys(row),
+                descriptionKeys: descriptionKeys,
+                foundKey: foundKey,
+                rawDescription: rawDescription,
+                cleanDescription: description,
+                descriptionLength: description ? description.length : 0,
+                descriptionValues: descriptionKeys.map(key => ({ [key]: row[key] }))
+              });
+              
+              const difficulty = getValue(row['Difficulty'] || row['difficulty'] || row['DIFFICULTY']).toLowerCase() || 'easy';
+              const link = getValue(row['Question link'] || row['question_link'] || row['link'] || row['url'] || row['URL'] || row['Link']) || '';
+              
+              // Enhanced date handling with multiple format support
+              const rawUploadDate = getValue(row['Upload Date'] || row['upload_date'] || row['date'] || row['Date'] || row['DATE'] || 
+                                           row['Assignment Date'] || row['assignment_date'] || row['Due Date'] || row['due_date']);
+              
+              // Enhanced debug logging for row processing - especially for description
+              console.log(`Row ${index + 1} detailed processing:`, {
+                dayNumber,
+                title: title.substring(0, 50) + (title.length > 50 ? '...' : ''),
+                description: description.substring(0, 100) + (description.length > 100 ? '...' : ''),
+                fullDescription: description,
+                difficulty,
+                link: link.substring(0, 50) + (link.length > 50 ? '...' : ''),
+                rawDescription: rawDescription,
+                rawUploadDate: rawUploadDate,
+                hasDescription: !!description && description.length > 0,
+                csvColumns: Object.keys(row),
+                descriptionSources: {
+                  'Description': row['Description'],
+                  'description': row['description'], 
+                  'DESCRIPTION': row['DESCRIPTION'],
+                  'desc': row['desc'],
+                  'found_in': rawDescription === row['Description'] ? 'Description' :
+                             rawDescription === row['description'] ? 'description' :
+                             rawDescription === row['DESCRIPTION'] ? 'DESCRIPTION' :
+                             rawDescription === row['desc'] ? 'desc' : 'other'
+                }
+              });
+              
+              // Optional fields
+              const category = getValue(row['Category'] || row['category'] || row['CATEGORY']) || 'General';
+              const tagsValue = getValue(row['Tags'] || row['tags'] || row['TAGS']);
+              const example = getValue(row['Example'] || row['example'] || row['EXAMPLE'] || row['Sample Input'] || row['sample_input']);
+              const constraint = getValue(row['Constraint'] || row['constraint'] || row['Constraints'] || row['constraints'] || row['CONSTRAINTS']);
+              
+              // Date handling - use enhanced date parsing with multiple format support
+              let uploadDate = parseDate(rawUploadDate);
+              
+              // Only auto-calculate date if dayNumber is valid and > 0, but user didn't provide date
+              if (!uploadDate && dayNumber > 0) {
+                // Leave empty - admin will assign dates manually
+                uploadDate = '';
+              }
+              
+              // If still no date and no valid day number, skip the row
+              if (!uploadDate && dayNumber <= 0) {
+                errors.push(`Row ${index + 2}: Missing both day number and date. Please provide at least one.`);
+                errorCount++;
+                continue;
+              }
+              
+              // For rows with day number but no date, we'll create a special identifier
+              if (!uploadDate && dayNumber > 0) {
+                // Use day number as identifier for manual date assignment
+                uploadDate = `pending-day-${dayNumber}`;
+              }
+
+              // Validate difficulty
+              const validDifficulties = ['easy', 'medium', 'hard'];
+              const normalizedDifficulty = validDifficulties.includes(difficulty) ? difficulty : 'medium';
+
+              // Process tags
+              const tagsArray = tagsValue ? 
+                tagsValue.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : 
+                [];
+
+              // Create question object with proper defaults - NEVER override provided description
+              const questionData = {
+                title: title || `Question for Day ${dayNumber || 'TBD'}`,
+                description: description || 'Description to be added later',  // Use description directly, no additional checks
+                link: link || 'https://example.com/placeholder',
+                tags: tagsArray,
+                difficulty: normalizedDifficulty as 'easy' | 'medium' | 'hard',
+                category: category || 'General',
+                example: example || 'Example to be added later',
+                constraint: constraint || 'Constraints to be specified'
+              };
+
+              // Detailed logging for question data creation
+              console.log(`Row ${index + 1} QUESTION DATA:`, {
+                originalDescription: description,
+                finalDescription: questionData.description,
+                isDescriptionFromCSV: description && description.length > 0,
+                usingDefaultDescription: questionData.description === 'Description to be added later',
+                questionDataComplete: questionData
+              });
+
+              console.log(`Question data created for row ${index + 1}:`, {
+                title: questionData.title,
+                description: questionData.description,
+                originalDescription: description,
+                rawDescription: rawDescription,
+                hasOriginalDescription: !!description && description.trim().length > 0,
+                usingDefaultDescription: questionData.description === 'Description to be added later',
+                descriptionLength: description ? description.length : 0
+              });
+
+              // Handle assignment update (edit existing cards instead of creating new ones)
+              let targetAssignment = null;
+              let assignmentData;
+              
+              // First, try to find existing assignment by day number
+              if (dayNumber > 0) {
+                targetAssignment = combinedAssignments.find(a => a.day_number === dayNumber);
+                console.log(`🎯 CSV UPDATE - Looking for existing assignment with day_number ${dayNumber}:`, targetAssignment ? 'FOUND' : 'NOT FOUND');
+              }
+              
+              // If not found by day number and we have a date, try to find by date
+              if (!targetAssignment && uploadDate && !uploadDate.startsWith('pending-day-')) {
+                targetAssignment = combinedAssignments.find(a => a.date === uploadDate);
+                console.log(`🎯 CSV UPDATE - Looking for existing assignment with date ${uploadDate}:`, targetAssignment ? 'FOUND' : 'NOT FOUND');
+              }
+              
+              // If still not found, show warning and skip this row
+              if (!targetAssignment) {
+                const identifier = dayNumber > 0 ? `Day ${dayNumber}` : (uploadDate ? `Date ${uploadDate}` : 'Unknown');
+                errors.push(`Row ${index + 2}: No existing assignment card found for ${identifier}. CSV upload only updates existing cards.`);
+                errorCount++;
+                console.log(`❌ CSV UPDATE - Skipping row ${index + 1}: No existing assignment found for ${identifier}`);
+                continue;
+              }
+              
+              console.log(`✅ CSV UPDATE - Found target assignment for row ${index + 1}:`, {
+                id: targetAssignment.id,
+                day_number: targetAssignment.day_number,
+                date: targetAssignment.date,
+                fromFirebase: targetAssignment.fromFirebase,
+                currentQuestions: {
+                  easy: targetAssignment.easy_question?.title || 'Empty',
+                  medium: targetAssignment.medium_question?.title || 'Empty',
+                  hard: targetAssignment.hard_question?.title || 'Empty'
+                }
+              });
+              
+              // Create updated assignment data by copying existing and updating the specific question
+              assignmentData = {
+                ...targetAssignment,
+                [normalizedDifficulty + '_question']: questionData,
+                updated_at: new Date().toISOString(),
+                updated_by: currentUser?.uid || 'bulk-upload',
+                bulk_uploaded: true
+              };
+              
+              // If the assignment doesn't have a date but we have one from CSV, set it
+              if (!assignmentData.date && uploadDate && !uploadDate.startsWith('pending-day-')) {
+                assignmentData.date = uploadDate;
+                console.log(`📅 CSV UPDATE - Setting date ${uploadDate} for assignment day ${dayNumber}`);
+              }
+              
+              console.log(`📝 CSV UPDATE - Updating ${normalizedDifficulty} question for row ${index + 1}:`, {
+                targetId: targetAssignment.id,
+                day_number: assignmentData.day_number,
+                date: assignmentData.date,
+                fromFirebase: targetAssignment.fromFirebase,
+                questionTitle: questionData.title,
+                questionDescription: questionData.description,
+                hasDescription: !!questionData.description && questionData.description !== 'Description to be added later'
+              });
+              
+              // Only save to Firebase if this assignment was originally from Firebase or has a date
+              if (targetAssignment.fromFirebase || assignmentData.date) {
+                const saveKey = assignmentData.date || targetAssignment.id;
+                
+                console.log(`🔥 CSV UPDATE - Saving to Firebase with key: ${saveKey}`);
+                console.log(`🔥 CSV UPDATE - Question data being saved:`, {
+                  difficulty: normalizedDifficulty,
+                  title: assignmentData[normalizedDifficulty + '_question'].title,
+                  description: assignmentData[normalizedDifficulty + '_question'].description,
+                  descriptionLength: assignmentData[normalizedDifficulty + '_question'].description.length
+                });
+                
+                await assignmentsService.setAssignment(saveKey, assignmentData);
+              } else {
+                console.log(`📝 CSV UPDATE - Template assignment updated in memory only (no Firebase save needed)`);
+              }
+              
+              // Log the final assignment data to verify description is preserved
+              console.log(`✅ Assignment updated for row ${index + 1}:`, {
+                targetId: targetAssignment.id,
+                dayNumber: assignmentData.day_number,
+                difficulty: normalizedDifficulty,
+                updatedQuestion: {
+                  title: assignmentData[`${normalizedDifficulty}_question`].title,
+                  description: assignmentData[`${normalizedDifficulty}_question`].description,
+                  descriptionLength: assignmentData[`${normalizedDifficulty}_question`].description.length,
+                  hasDescription: !!assignmentData[`${normalizedDifficulty}_question`].description && 
+                                 assignmentData[`${normalizedDifficulty}_question`].description !== 'Description to be added later'
+                }
+              });
+              
+              console.log(`Successfully updated existing assignment for row ${index + 1}: Day ${dayNumber || 'TBD'}, ${normalizedDifficulty} question`);
+              successCount++;
+
+            } catch (error) {
+              console.error(`Error processing row ${index + 1}:`, error);
+              errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : 'Processing failed'}`);
+              errorCount++;
+            }
+          }
+
+          // Show results
+          console.log(`CSV Update Summary: ${successCount} success, ${errorCount} errors`);
+          
+          let successMessage = `Successfully updated ${successCount} existing assignment cards with questions.`;
+          if (errorCount > 0) {
+            successMessage += ` ${errorCount} questions failed to update.`;
+          }
+
+          setBulkUploadSuccess(successMessage);
+          
+          if (errors.length > 0) {
+            console.log('Update errors:', errors);
+            if (errors.length <= 5) {
+              setBulkUploadError(`Errors encountered:\n${errors.join('\n')}`);
+            } else {
+              setBulkUploadError(`${errors.length} errors encountered. First 5 errors:\n${errors.slice(0, 5).join('\n')}`);
+              console.log('All update errors:', errors);
+            }
+          }
+          
+          // Refresh assignments
+          console.log('Refreshing assignments after CSV update...');
+          await fetchAssignments();
+          
+          toast({
+            title: 'Bulk Update Complete',
+            description: `${successCount} assignment cards updated successfully${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+            variant: errorCount > 0 ? 'destructive' : 'default'
+          });
+
+          // Clear the file input
+          event.target.value = '';
+
+        } catch (error: any) {
+          console.error('CSV processing error:', error);
+          setBulkUploadError(`Failed to process CSV: ${error.message || 'Unknown error'}`);
+          toast({
+            variant: 'destructive',
+            title: 'Update Failed',
+            description: `Failed to process CSV file: ${error.message || 'Please check the format and try again'}`
+          });
+        } finally {
+          setBulkUploadLoading(false);
+        }
+      },
+      error: (error: any) => {
+        console.error('CSV parse error:', error);
+        setBulkUploadError('Failed to parse CSV file. Please check the file format.');
+        setBulkUploadLoading(false);
+        toast({
+          variant: 'destructive',
+          title: 'Parse Error',
+          description: 'Failed to parse CSV file. Please check the file format.'
+        });
+      }
+    });
+  };
 
   // Load exam settings
   const fetchExamSettings = async () => {
@@ -1381,9 +1847,37 @@ const AdminDashboard = () => {
 
   const fetchAssignments = async () => {
     try {
-      console.log('Fetching all assignments...');
+      console.log('📥 Fetching all assignments from Firebase...');
       const allAssignments = await assignmentsService.getAllAssignments();
-      console.log('Assignments fetched:', allAssignments);
+      console.log(`📦 Fetched ${allAssignments.length} assignments from Firebase`);
+      
+      // Debug: Log a few assignments to check if descriptions are being loaded
+      if (allAssignments.length > 0) {
+        console.log('🔍 Sample assignments loaded from Firebase:');
+        allAssignments.slice(0, 3).forEach((assignment, index) => {
+          console.log(`Assignment ${index + 1}:`, {
+            id: assignment.id,
+            date: assignment.date,
+            day_number: assignment.day_number,
+            easy_question: {
+              title: assignment.easy_question?.title || 'No title',
+              description: assignment.easy_question?.description || 'No description',
+              hasDescription: !!assignment.easy_question?.description && assignment.easy_question.description !== 'Description to be added later'
+            },
+            medium_question: {
+              title: assignment.medium_question?.title || 'No title', 
+              description: assignment.medium_question?.description || 'No description',
+              hasDescription: !!assignment.medium_question?.description && assignment.medium_question.description !== 'Description to be added later'
+            },
+            hard_question: {
+              title: assignment.hard_question?.title || 'No title',
+              description: assignment.hard_question?.description || 'No description', 
+              hasDescription: !!assignment.hard_question?.description && assignment.hard_question.description !== 'Description to be added later'
+            }
+          });
+        });
+      }
+      
       setAssignments(allAssignments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     } catch (error) {
       console.error('Error fetching assignments:', error);
@@ -1391,15 +1885,49 @@ const AdminDashboard = () => {
   };
 
   const handleEditAssignment = (assignment: any) => {
+    console.log('🔧 Starting to edit assignment:', assignment);
+    
     setInlineEditingAssignment(assignment.id);
-    setInlineEditData({
-      ...assignment,
-      date: assignment.date,
-      day_number: assignment.day_number,
-      easy_question: { ...assignment.easy_question },
-      medium_question: { ...assignment.medium_question },
-      hard_question: { ...assignment.hard_question }
+    
+    // Deep copy the assignment data to ensure we have all the fields
+    const editData = {
+      id: assignment.id,
+      date: assignment.date || '',
+      day_number: assignment.day_number || 1,
+      easy_question: {
+        title: assignment.easy_question?.title || '',
+        description: assignment.easy_question?.description || '',
+        link: assignment.easy_question?.link || '',
+        tags: Array.isArray(assignment.easy_question?.tags) ? [...assignment.easy_question.tags] : [],
+        difficulty: 'easy' as const
+      },
+      medium_question: {
+        title: assignment.medium_question?.title || '',
+        description: assignment.medium_question?.description || '',
+        link: assignment.medium_question?.link || '',
+        tags: Array.isArray(assignment.medium_question?.tags) ? [...assignment.medium_question.tags] : [],
+        difficulty: 'medium' as const
+      },
+      hard_question: {
+        title: assignment.hard_question?.title || '',
+        description: assignment.hard_question?.description || '',
+        link: assignment.hard_question?.link || '',
+        tags: Array.isArray(assignment.hard_question?.tags) ? [...assignment.hard_question.tags] : [],
+        difficulty: 'hard' as const
+      },
+      created_by: assignment.created_by,
+      created_at: assignment.created_at,
+      fromFirebase: assignment.fromFirebase
+    };
+    
+    console.log('📝 Edit data prepared:', editData);
+    console.log('📋 Question descriptions:', {
+      easy: editData.easy_question.description,
+      medium: editData.medium_question.description,
+      hard: editData.hard_question.description
     });
+    
+    setInlineEditData(editData);
   };
 
   const handleCancelInlineEdit = () => {
@@ -1447,23 +1975,49 @@ const AdminDashboard = () => {
         difficulty: question?.difficulty || 'easy'
       });
 
-      // If the date changed, we need to handle potential conflicts
+      console.log('💾 Saving assignment with inline edit data:', inlineEditData);
+      console.log('📝 Questions being saved:', {
+        easy: processQuestion(inlineEditData.easy_question),
+        medium: processQuestion(inlineEditData.medium_question),
+        hard: processQuestion(inlineEditData.hard_question)
+      });
+
+      // Find the original assignment for comparison
       const originalAssignment = combinedAssignments.find(a => a.id === inlineEditingAssignment);
       const dateChanged = originalAssignment && originalAssignment.date !== inlineEditData.date;
 
-      // Save the assignment to the new date
-      await assignmentsService.setAssignment(inlineEditData.date, {
+      // Prepare the assignment data to save
+      const assignmentToSave = {
+        id: inlineEditData.id || inlineEditData.date,
         date: inlineEditData.date,
         day_number: inlineEditData.day_number,
-        easy_question: processQuestion(inlineEditData.easy_question),
-        medium_question: processQuestion(inlineEditData.medium_question),
-        hard_question: processQuestion(inlineEditData.hard_question),
-        created_by: currentUser.uid
-      });
+        easy_question: {
+          ...processQuestion(inlineEditData.easy_question),
+          difficulty: 'easy' as const
+        },
+        medium_question: {
+          ...processQuestion(inlineEditData.medium_question),
+          difficulty: 'medium' as const
+        },
+        hard_question: {
+          ...processQuestion(inlineEditData.hard_question),
+          difficulty: 'hard' as const
+        },
+        created_by: originalAssignment?.created_by || currentUser.uid,
+        created_at: originalAssignment?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        updated_by: currentUser.uid
+      };
 
-      // If date changed, remove the assignment from the old date
-      if (dateChanged && originalAssignment) {
+      console.log('🔥 Final assignment data to save to Firebase:', assignmentToSave);
+
+      // Save the assignment using the date as the document ID
+      await assignmentsService.setAssignment(inlineEditData.date, assignmentToSave);
+
+      // If date changed and there was an original assignment with a different ID, clean up
+      if (dateChanged && originalAssignment && originalAssignment.id !== inlineEditData.date) {
         try {
+          console.log('🗑️ Deleting old assignment at:', originalAssignment.id);
           await assignmentsService.deleteAssignment(originalAssignment.id);
         } catch (error) {
           console.warn('Could not delete old assignment:', error);
@@ -1493,14 +2047,20 @@ const AdminDashboard = () => {
   const handleInlineQuestionChange = (questionType: 'easy' | 'medium' | 'hard', field: string, value: any) => {
     if (!inlineEditData) return;
     
+    console.log(`🔄 Updating ${questionType} question ${field}:`, value);
+    
+    const updatedQuestion = {
+      ...inlineEditData[`${questionType}_question`],
+      [field]: field === 'tags' && typeof value === 'string' 
+        ? value.split(',').map(tag => tag.trim()).filter(tag => tag)
+        : value
+    };
+    
+    console.log(`📝 Updated ${questionType} question:`, updatedQuestion);
+    
     setInlineEditData({
       ...inlineEditData,
-      [`${questionType}_question`]: {
-        ...inlineEditData[`${questionType}_question`],
-        [field]: field === 'tags' && typeof value === 'string' 
-          ? value.split(',').map(tag => tag.trim()).filter(tag => tag)
-          : value
-      }
+      [`${questionType}_question`]: updatedQuestion
     });
   };
 
@@ -1607,10 +2167,12 @@ const AdminDashboard = () => {
 
   const handleDeleteAssignment = async (assignmentId: string) => {
     try {
+      // Completely delete the assignment from Firebase
       await assignmentsService.deleteAssignment(assignmentId);
+      
       toast({
         title: 'Success',
-        description: 'Assignment deleted successfully'
+        description: 'Assignment deleted successfully.'
       });
       await fetchAssignments();
     } catch (error) {
@@ -1623,28 +2185,20 @@ const AdminDashboard = () => {
     }
   };
 
-  // Enhanced delete function for assignments beyond day 55
+  // Enhanced delete function for assignments - completely deletes the assignment
   const handleDeleteExtendedAssignment = async (assignment: any) => {
-    if (assignment.day_number <= 55) {
-      toast({
-        variant: 'destructive',
-        title: 'Cannot Delete',
-        description: 'Core program assignments (Days 1-55) cannot be deleted. You can only edit them.'
-      });
-      return;
-    }
-
     try {
       if (assignment.fromFirebase && assignment.id) {
+        // Completely delete the assignment from Firebase
         await assignmentsService.deleteAssignment(assignment.id);
+      } else {
+        // For template assignments, remove from local state
+        setAllGeneratedDays(prev => prev.filter(a => a.id !== assignment.id));
       }
-      
-      // Remove from local state
-      setAllGeneratedDays(prev => prev.filter(a => a.id !== assignment.id));
       
       toast({
         title: 'Success',
-        description: `Day ${assignment.day_number} assignment deleted successfully`
+        description: `Day ${assignment.day_number} assignment deleted successfully.`
       });
       
       await fetchAssignments();
@@ -1654,6 +2208,255 @@ const AdminDashboard = () => {
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to delete assignment'
+      });
+    }
+  };
+
+  // Multiple selection helper functions
+  const handleSelectAssignment = (assignmentId: string) => {
+    setSelectedAssignments(prev => {
+      if (prev.includes(assignmentId)) {
+        return prev.filter(id => id !== assignmentId);
+      } else {
+        return [...prev, assignmentId];
+      }
+    });
+  };
+
+  const handleSelectAllAssignments = () => {
+    if (isSelectAllChecked) {
+      setSelectedAssignments([]);
+      setIsSelectAllChecked(false);
+    } else {
+      // Use combinedAssignments for questions tab, assignments for others
+      const assignmentList = selectedTab === 'questions' ? combinedAssignments : assignments;
+      
+      if (selectedTab === 'questions') {
+        // For questions tab, only select assignments that can be cleared (have questions and are saved)
+        const clearableAssignments = assignmentList.filter(a => {
+          const hasQuestions = a.easy_question?.title || a.medium_question?.title || a.hard_question?.title;
+          const isSaved = a.fromFirebase && a.date;
+          return hasQuestions && isSaved;
+        });
+        setSelectedAssignments(clearableAssignments.map(a => a.id).filter(Boolean));
+      } else {
+        setSelectedAssignments(assignmentList.map(a => a.id).filter(Boolean));
+      }
+      
+      setIsSelectAllChecked(true);
+    }
+  };
+
+  // Functions for Questions Tab - Clear data but keep cards
+  const handleClearQuestionData = async (assignmentId: string) => {
+    try {
+      // Find the assignment in combinedAssignments (not just assignments)
+      const assignment = combinedAssignments.find(a => a.id === assignmentId);
+      if (!assignment) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Assignment not found'
+        });
+        return;
+      }
+
+      // Only clear if the assignment has questions and is saved to Firebase
+      if (!assignment.fromFirebase || !assignment.date) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Cannot clear data from unsaved assignment. Please save the assignment first.'
+        });
+        return;
+      }
+
+      // Clear the questions but keep the assignment structure
+      const clearedAssignment = {
+        date: assignment.date,
+        day_number: assignment.day_number,
+        easy_question: {
+          title: '',
+          description: '',
+          link: '',
+          tags: [],
+          difficulty: 'easy' as const
+        },
+        medium_question: {
+          title: '',
+          description: '',
+          link: '',
+          tags: [],
+          difficulty: 'medium' as const
+        },
+        hard_question: {
+          title: '',
+          description: '',
+          link: '',
+          tags: [],
+          difficulty: 'hard' as const
+        },
+        created_by: assignment.created_by || userData?.uid || 'admin',
+        updated_at: new Date().toISOString()
+      };
+      
+      // Update the assignment with cleared questions using the date as key
+      await assignmentsService.setAssignment(assignment.date, clearedAssignment);
+      
+      toast({
+        title: 'Success',
+        description: 'Question data cleared successfully. Card remains for future use.'
+      });
+      await fetchAssignments();
+    } catch (error) {
+      console.error('Error clearing question data:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to clear question data'
+      });
+    }
+  };
+
+  const handleClearSelectedQuestionData = async () => {
+    if (selectedAssignments.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No assignments selected'
+      });
+      return;
+    }
+
+    try {
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      // Clear question data for all selected assignments but keep the cards
+      for (const assignmentId of selectedAssignments) {
+        try {
+          const assignment = combinedAssignments.find(a => a.id === assignmentId);
+          if (!assignment) {
+            errors.push(`Assignment ${assignmentId} not found`);
+            errorCount++;
+            continue;
+          }
+
+          // Only clear if the assignment has questions and is saved to Firebase
+          if (!assignment.fromFirebase || !assignment.date) {
+            errors.push(`Assignment Day ${assignment.day_number} not saved to Firebase yet`);
+            errorCount++;
+            continue;
+          }
+
+          // Check if assignment actually has questions to clear
+          const hasQuestions = assignment.easy_question?.title || 
+                              assignment.medium_question?.title || 
+                              assignment.hard_question?.title;
+          
+          if (!hasQuestions) {
+            errors.push(`Assignment Day ${assignment.day_number} has no questions to clear`);
+            errorCount++;
+            continue;
+          }
+
+          const clearedAssignment = {
+            date: assignment.date,
+            day_number: assignment.day_number,
+            easy_question: {
+              title: '',
+              description: '',
+              link: '',
+              tags: [],
+              difficulty: 'easy' as const
+            },
+            medium_question: {
+              title: '',
+              description: '',
+              link: '',
+              tags: [],
+              difficulty: 'medium' as const
+            },
+            hard_question: {
+              title: '',
+              description: '',
+              link: '',
+              tags: [],
+              difficulty: 'hard' as const
+            },
+            created_by: assignment.created_by || userData?.uid || 'admin',
+            updated_at: new Date().toISOString()
+          };
+          
+          await assignmentsService.setAssignment(assignment.date, clearedAssignment);
+          successCount++;
+        } catch (error) {
+          console.error(`Error clearing assignment ${assignmentId}:`, error);
+          errorCount++;
+          errors.push(`Failed to clear assignment ${assignmentId}`);
+        }
+      }
+
+      // Show results
+      if (successCount > 0) {
+        toast({
+          title: 'Success',
+          description: `Question data cleared for ${successCount} assignment(s). Cards remain for future use.${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+        });
+      }
+
+      if (errorCount > 0 && successCount === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: `Failed to clear question data. ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '...' : ''}`
+        });
+      }
+      
+      setSelectedAssignments([]);
+      setIsSelectAllChecked(false);
+      await fetchAssignments();
+    } catch (error) {
+      console.error('Error clearing question data:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to clear question data'
+      });
+    }
+  };
+
+  const handleDeleteSelectedAssignments = async () => {
+    if (selectedAssignments.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No assignments selected'
+      });
+      return;
+    }
+
+    try {
+      // Completely delete selected assignments from Firebase
+      for (const assignmentId of selectedAssignments) {
+        await assignmentsService.deleteAssignment(assignmentId);
+      }
+      
+      toast({
+        title: 'Success',
+        description: `${selectedAssignments.length} assignment(s) deleted successfully`
+      });
+      
+      setSelectedAssignments([]);
+      setIsSelectAllChecked(false);
+      await fetchAssignments();
+    } catch (error) {
+      console.error('Error deleting assignments:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete assignments'
       });
     }
   };
@@ -1826,18 +2629,17 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <div className="w-64 bg-card border-r flex flex-col">
+      {/* Sidebar - Fixed */}
+      <div className="w-64 bg-card border-r flex flex-col fixed h-full z-10">
         {/* Header */}
         <div className="p-6 border-b">
           <h1 className="text-xl font-bold">Admin Dashboard</h1>
         </div>
         
         {/* Navigation */}
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-4 overflow-y-auto">
           <div className="space-y-2">
             {[
-              { id: 'overview', label: 'Overview', icon: BarChart3 },
               { id: 'students', label: 'Students', icon: Users },
               { id: 'submissions', label: 'Submissions', icon: BookOpen },
               { id: 'assignments', label: 'Assignments', icon: Calendar },
@@ -1883,101 +2685,11 @@ const AdminDashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col ml-64">
         {/* Content Area */}
         <main className="flex-1 p-6 overflow-auto">
           {/* Tab Content */}
-          {selectedTab === 'overview' && (
-          <div className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Students
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalStudents}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {stats.activeStudents} active
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Submissions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalSubmissions}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {stats.pendingReviews} pending review
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Average Streak
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.averageStreak}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {stats.completionRate}% completion rate
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Pending Reviews */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
-                  Pending Reviews ({pendingSubmissions.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {pendingSubmissions.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">
-                    No submissions pending review
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {pendingSubmissions.slice(0, 5).map((submission) => (
-                      <div key={submission.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline">
-                            {submission.difficulty}
-                          </Badge>
-                          <div>
-                            <p className="font-medium">{submission.student_name}</p>
-                            <p className="text-sm text-muted-foreground">{submission.question_title}</p>
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          onClick={() => handleReviewSubmission(submission)}
-                          className="flex items-center gap-2"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Review
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {selectedTab === 'students' && (
+          {selectedTab === 'students' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -2022,8 +2734,8 @@ const AdminDashboard = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Programs</SelectItem>
-                        {uniqueCourses.map((course) => (
-                          <SelectItem key={course} value={course}>{course}</SelectItem>
+                        {uniqueCourses.map((course, index) => (
+                          <SelectItem key={`course-${index}-${course}`} value={course}>{course}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -2038,8 +2750,8 @@ const AdminDashboard = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Semesters</SelectItem>
-                        {uniqueSemesters.map((semester) => (
-                          <SelectItem key={semester} value={semester}>{semester}</SelectItem>
+                        {uniqueSemesters.map((semester, index) => (
+                          <SelectItem key={`semester-${index}-${semester}`} value={semester}>{semester}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -2054,8 +2766,8 @@ const AdminDashboard = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Sections</SelectItem>
-                        {uniqueSections.map((section) => (
-                          <SelectItem key={section} value={section}>{section}</SelectItem>
+                        {uniqueSections.map((section, index) => (
+                          <SelectItem key={`section-${index}-${section}`} value={section}>{section}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -2397,6 +3109,82 @@ const AdminDashboard = () => {
               </Card>
             </div>
 
+            {/* Bulk Upload Section */}
+            {showBulkUpload && (
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg text-blue-800">Bulk CSV Update</CardTitle>
+                  <CardDescription className="text-blue-600">
+                    Upload a CSV file to update existing assignment cards with questions. Only existing cards will be modified.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">CSV File Format</Label>
+                    <div className="text-xs text-muted-foreground bg-white p-3 rounded border">
+                      <div className="font-mono mb-2 text-gray-600">
+                        Required: Day Number (must match existing card), Title, Description, Link, Difficulty
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <div>• <strong>Day Number:</strong> 1, 2, 3... (must match existing assignment day)</div>
+                        <div>• <strong>Title:</strong> Question title</div>
+                        <div>• <strong>Description:</strong> Problem description</div>
+                        <div>• <strong>Link:</strong> Problem URL</div>
+                        <div>• <strong>Difficulty:</strong> easy/medium/hard</div>
+                        <div>• <strong>Tags:</strong> Comma-separated (optional)</div>
+                        <div>• <strong>Upload Date:</strong> YYYY-MM-DD (optional)</div>
+                        <div className="text-orange-600 font-medium mt-2">⚠️ Note: CSV will only update existing assignment cards, not create new ones</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <Label htmlFor="csv-upload-assignments" className="cursor-pointer">
+                      <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                        <Download className="w-4 h-4" />
+                        {bulkUploadLoading ? 'Updating...' : 'Choose CSV File to Update'}
+                      </div>
+                      <Input
+                        id="csv-upload-assignments"
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleBulkUploadCSV}
+                        disabled={bulkUploadLoading}
+                      />
+                    </Label>
+                    
+                    {bulkUploadLoading && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Updating assignments...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {bulkUploadError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                      <div className="flex items-center gap-2 text-red-800">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span className="text-sm font-medium">Error:</span>
+                      </div>
+                      <p className="text-sm text-red-700 mt-1">{bulkUploadError}</p>
+                    </div>
+                  )}
+
+                  {bulkUploadSuccess && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                      <div className="flex items-center gap-2 text-green-800">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-sm font-medium">Success:</span>
+                      </div>
+                      <p className="text-sm text-green-700 mt-1">{bulkUploadSuccess}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Assignments List */}
             <Card className="shadow-sm">
               <CardHeader className="pb-4">
@@ -2408,11 +3196,7 @@ const AdminDashboard = () => {
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm">
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      Analytics
-                    </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => setShowBulkUpload(!showBulkUpload)}>
                       <Settings className="w-4 h-4 mr-2" />
                       Bulk Edit
                     </Button>
@@ -2421,7 +3205,22 @@ const AdminDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {combinedAssignments.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((assignment) => {
+                  {combinedAssignments
+                    .sort((a, b) => {
+                      // Sort by day_number first (ascending), then by date if day_number is missing
+                      if (a.day_number && b.day_number) {
+                        return a.day_number - b.day_number;
+                      }
+                      if (a.day_number && !b.day_number) return -1;
+                      if (!a.day_number && b.day_number) return 1;
+                      
+                      // Both have no day_number, sort by date
+                      if (a.date && b.date) {
+                        return new Date(a.date).getTime() - new Date(b.date).getTime();
+                      }
+                      return 0;
+                    })
+                    .map((assignment) => {
                       const questions = {
                         easy: assignment.easy_question.title ? assignment.easy_question : null,
                         medium: assignment.medium_question.title ? assignment.medium_question : null,
@@ -2502,10 +3301,10 @@ const AdminDashboard = () => {
                                         <BookOpen className="w-4 h-4" />
                                         <span>{totalQuestions} Question{totalQuestions !== 1 ? 's' : ''}</span>
                                       </div>
-                                      {assignment.date && (
+                                      {assignment.created_at && (
                                         <div className="flex items-center gap-1">
                                           <Clock className="w-4 h-4" />
-                                          <span>Created {new Date(assignment.date).toLocaleDateString()}</span>
+                                          <span>Created {new Date(assignment.created_at).toLocaleDateString()}</span>
                                         </div>
                                       )}
                                     </div>
@@ -3302,7 +4101,7 @@ const AdminDashboard = () => {
                     <BookOpen className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{assignments.length}</p>
+                    <p className="text-2xl font-bold">{combinedAssignments.length}</p>
                     <p className="text-sm text-muted-foreground">Total Assignments</p>
                   </div>
                 </div>
@@ -3314,9 +4113,9 @@ const AdminDashboard = () => {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-green-600">
-                      {assignments.filter(a => a.easy_question.title || a.medium_question.title || a.hard_question.title).length}
+                      {combinedAssignments.filter(a => a.easy_question?.title || a.medium_question?.title || a.hard_question?.title).length}
                     </p>
-                    <p className="text-sm text-muted-foreground">Active Questions</p>
+                    <p className="text-sm text-muted-foreground">With Questions</p>
                   </div>
                 </div>
               </Card>
@@ -3327,9 +4126,9 @@ const AdminDashboard = () => {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-yellow-600">
-                      {45 - assignments.length}
+                      {combinedAssignments.filter(a => !a.easy_question?.title && !a.medium_question?.title && !a.hard_question?.title).length}
                     </p>
-                    <p className="text-sm text-muted-foreground">Pending Days</p>
+                    <p className="text-sm text-muted-foreground">Empty Cards</p>
                   </div>
                 </div>
               </Card>
@@ -3340,7 +4139,7 @@ const AdminDashboard = () => {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-purple-600">
-                      {Math.round((assignments.length / 45) * 100)}%
+                      {Math.round((combinedAssignments.filter(a => a.easy_question?.title || a.medium_question?.title || a.hard_question?.title).length / Math.max(1, combinedAssignments.length)) * 100)}%
                     </p>
                     <p className="text-sm text-muted-foreground">Progress</p>
                   </div>
@@ -3363,19 +4162,103 @@ const AdminDashboard = () => {
                 variant="ghost"
                 size="sm"
                 className="flex items-center gap-2"
+                onClick={() => setShowBulkUpload(!showBulkUpload)}
               >
                 <Settings className="w-4 h-4" />
-                Bulk Operations
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                <BarChart3 className="w-4 h-4" />
-                Analytics
+                CSV Update
               </Button>
             </div>
+
+            {/* Bulk Upload Section */}
+            {showBulkUpload && (
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg text-blue-800">Bulk CSV Upload</CardTitle>
+                  <CardDescription className="text-blue-600">
+                    Upload a CSV file with questions to automatically generate assignments for multiple days
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">CSV File Format - Super Flexible!</Label>
+                    <div className="text-xs text-muted-foreground bg-white p-3 rounded border">
+                      <div className="p-2 bg-green-50 rounded border-l-2 border-green-400 mb-2">
+                        <strong className="text-green-700">Only Required:</strong> Day Number column (1, 2, 3...)
+                      </div>
+                      
+                      <div className="font-mono mb-2 text-gray-600">
+                        Recommended columns: Day Number, Question, Topic, Difficulty, Question Type, Options, Correct Answer, Explanation
+                      </div>
+                      
+                      <div className="space-y-1 text-xs">
+                        <div><strong className="text-blue-600">Smart Defaults Applied:</strong></div>
+                        <div>• Missing <strong>Question</strong> → "Question for Day X"</div>
+                        <div>• Missing <strong>Topic</strong> → "General"</div>
+                        <div>• Missing <strong>Difficulty</strong> → "medium"</div>
+                        <div>• Missing <strong>Question Type</strong> → "mcq"</div>
+                        <div>• Missing <strong>Options</strong> → Empty array</div>
+                        <div>• Missing <strong>Correct Answer</strong> → "To be filled"</div>
+                        <div>• Missing <strong>Explanation</strong> → "Explanation to be added later"</div>
+                        <div>• Missing <strong>Upload Date</strong> → Today's date</div>
+                        
+                        <div className="mt-2 p-2 bg-blue-50 rounded">
+                          <strong className="text-blue-700">💡 Upload Strategy:</strong> Upload with minimal data, edit details later in admin interface!
+                        </div>
+                        <div>• <strong>Upload Date:</strong> YYYY-MM-DD (defaults to today)</div>
+                        
+                        <div className="mt-2 p-2 bg-blue-50 rounded border-l-2 border-blue-300">
+                          <strong className="text-blue-700">💡 Pro Tip:</strong> Empty fields will be set to defaults and can be edited later through the admin interface.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <Label htmlFor="csv-upload" className="cursor-pointer">
+                      <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                        <Download className="w-4 h-4" />
+                        {bulkUploadLoading ? 'Processing...' : 'Choose CSV File'}
+                      </div>
+                      <Input
+                        id="csv-upload"
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleBulkUploadCSV}
+                        disabled={bulkUploadLoading}
+                      />
+                    </Label>
+                    
+                    {bulkUploadLoading && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Processing CSV...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {bulkUploadError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                      <div className="flex items-center gap-2 text-red-800">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span className="text-sm font-medium">Error:</span>
+                      </div>
+                      <p className="text-sm text-red-700 mt-1">{bulkUploadError}</p>
+                    </div>
+                  )}
+
+                  {bulkUploadSuccess && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                      <div className="flex items-center gap-2 text-green-800">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-sm font-medium">Success:</span>
+                      </div>
+                      <p className="text-sm text-green-700 mt-1">{bulkUploadSuccess}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -3619,60 +4502,6 @@ const AdminDashboard = () => {
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* Quick Actions */}
-                <Card className="shadow-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg">Quick Actions</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Button variant="outline" className="w-full justify-start" size="sm">
-                      <Download className="w-4 h-4 mr-2" />
-                      Import from Template
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start" size="sm">
-                      <Code className="w-4 h-4 mr-2" />
-                      Bulk Create
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start" size="sm">
-                      <Settings className="w-4 h-4 mr-2" />
-                      Configure Defaults
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start" size="sm">
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      View Analytics
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Recent Activity */}
-                <Card className="shadow-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg">Recent Activity</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {assignments.slice(0, 3).map((assignment) => (
-                        <div key={assignment.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                          <div className="w-2 h-2 bg-green-500 rounded-full" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              Day {assignment.day_number}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {assignment.date}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                      {assignments.length === 0 && (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No recent activity
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
             </div>
 
@@ -3683,49 +4512,98 @@ const AdminDashboard = () => {
                   <div>
                     <CardTitle className="text-xl">All Assignments</CardTitle>
                     <CardDescription>
-                      Comprehensive view of all created assignments with management options
+                      View and clear question data while preserving assignment cards for future use
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm">
-                      <Filter className="w-4 h-4 mr-2" />
-                      Filter
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Search className="w-4 h-4 mr-2" />
-                      Search
-                    </Button>
+                    {selectedAssignments.length > 0 && (
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={handleClearSelectedQuestionData}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Clear Selected ({selectedAssignments.length})
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                {assignments.length === 0 ? (
+                {combinedAssignments.length === 0 ? (
                   <div className="text-center py-12">
                     <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
                       <BookOpen className="w-8 h-8 text-muted-foreground" />
                     </div>
-                    <h3 className="text-lg font-semibold mb-2">No assignments created yet</h3>
+                    <h3 className="text-lg font-semibold mb-2">No assignments available</h3>
                     <p className="text-muted-foreground mb-4">
                       Start building your 45-day coding challenge by creating your first assignment.
                     </p>
-                    <Button onClick={() => setSelectedAssignmentDate(new Date().toISOString().split('T')[0])}>
+                    <Button onClick={() => setSelectedTab('assignments')}>
                       <Plus className="w-4 h-4 mr-2" />
-                      Create First Assignment
+                      Go to Assignments Tab
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {assignments.map((assignment) => {
+                    {/* Select All Header */}
+                    {combinedAssignments.length > 0 && (
+                      <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg border">
+                        <Checkbox
+                          checked={isSelectAllChecked}
+                          onCheckedChange={handleSelectAllAssignments}
+                        />
+                        <span className="text-sm font-medium">
+                          Select All Clearable ({combinedAssignments.filter(a => {
+                            const hasQuestions = a.easy_question?.title || a.medium_question?.title || a.hard_question?.title;
+                            const isSaved = a.fromFirebase && a.date;
+                            return hasQuestions && isSaved;
+                          }).length} of {combinedAssignments.length} assignments)
+                        </span>
+                        {selectedAssignments.length > 0 && (
+                          <span className="text-sm text-muted-foreground">
+                            - {selectedAssignments.length} selected
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    
+                    {combinedAssignments
+                      .sort((a, b) => {
+                        // Sort by day_number first (ascending), then by date if day_number is missing
+                        if (a.day_number && b.day_number) {
+                          return a.day_number - b.day_number;
+                        }
+                        if (a.day_number && !b.day_number) return -1;
+                        if (!a.day_number && b.day_number) return 1;
+                        
+                        // Both have no day_number, sort by date
+                        if (a.date && b.date) {
+                          return new Date(a.date).getTime() - new Date(b.date).getTime();
+                        }
+                        return 0;
+                      })
+                      .map((assignment) => {
                       const questions = [
-                        assignment.easy_question.title && { ...assignment.easy_question, level: 'Easy', color: 'bg-green-500' },
-                        assignment.medium_question.title && { ...assignment.medium_question, level: 'Medium', color: 'bg-yellow-500' },
-                        assignment.hard_question.title && { ...assignment.hard_question, level: 'Hard', color: 'bg-red-500' }
+                        assignment.easy_question?.title && { ...assignment.easy_question, level: 'Easy', color: 'bg-green-500' },
+                        assignment.medium_question?.title && { ...assignment.medium_question, level: 'Medium', color: 'bg-yellow-500' },
+                        assignment.hard_question?.title && { ...assignment.hard_question, level: 'Hard', color: 'bg-red-500' }
                       ].filter(Boolean);
+
+                      // Check if this assignment can be cleared (has questions and is saved to Firebase)
+                      const canBeClearedHasQuestions = questions.length > 0;
+                      const canBeClearedIsSaved = assignment.fromFirebase && assignment.date;
+                      const canBeCleared = canBeClearedHasQuestions && canBeClearedIsSaved;
 
                       return (
                         <div key={assignment.id} className="group p-4 border-2 border-muted rounded-lg hover:border-primary/30 transition-all hover:shadow-sm">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
+                              <Checkbox
+                                checked={selectedAssignments.includes(assignment.id)}
+                                onCheckedChange={() => handleSelectAssignment(assignment.id)}
+                                disabled={!canBeCleared}
+                              />
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                                   <span className="text-sm font-bold text-primary">
@@ -3733,7 +4611,7 @@ const AdminDashboard = () => {
                                   </span>
                                 </div>
                                 <div>
-                                  <p className="font-semibold">{assignment.date}</p>
+                                  <p className="font-semibold">{assignment.date || 'No date assigned'}</p>
                                   <div className="flex items-center gap-2 mt-1">
                                     {questions.length > 0 ? (
                                       questions.map((question: any, index) => (
@@ -3746,6 +4624,11 @@ const AdminDashboard = () => {
                                         No questions
                                       </Badge>
                                     )}
+                                    {!assignment.fromFirebase && (
+                                      <Badge variant="outline" className="text-xs text-gray-500">
+                                        Template
+                                      </Badge>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -3756,8 +4639,8 @@ const AdminDashboard = () => {
                                     {questions[0].title}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {questions[0].tags.slice(0, 3).join(', ')}
-                                    {questions[0].tags.length > 3 && '...'}
+                                    {questions[0].tags?.slice(0, 3).join(', ')}
+                                    {questions[0].tags?.length > 3 && '...'}
                                   </p>
                                 </div>
                               )}
@@ -3786,8 +4669,13 @@ const AdminDashboard = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleDeleteAssignment(assignment.id!)}
-                                className="h-8 px-3 text-red-600 hover:text-red-700 hover:border-red-200"
+                                onClick={() => handleClearQuestionData(assignment.id!)}
+                                disabled={!canBeCleared}
+                                className="h-8 px-3 text-red-600 hover:text-red-700 hover:border-red-200 disabled:text-gray-400 disabled:hover:text-gray-400"
+                                title={!canBeCleared ? 
+                                  (!canBeClearedIsSaved ? 'Assignment not saved to Firebase yet' : 'No questions to clear') : 
+                                  'Clear question data'
+                                }
                               >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
@@ -3812,28 +4700,6 @@ const AdminDashboard = () => {
                 <p className="text-muted-foreground">Manage student questions and provide support</p>
               </div>
               <div className="flex gap-2">
-                <Select value={qaStatusFilter} onValueChange={(value) => setQaStatusFilter(value as 'all' | 'pending' | 'answered' | 'closed')}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="answered">Answered</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={qaPriorityFilter} onValueChange={(value) => setQaPriorityFilter(value as 'all' | 'low' | 'medium' | 'high')}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Priority</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
                 <Button 
                   onClick={async () => {
                     setQaLoading(true);
@@ -3885,10 +4751,7 @@ const AdminDashboard = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {studentQuestions
-                      .filter(q => qaStatusFilter === 'all' || q.status === qaStatusFilter)
-                      .filter(q => qaPriorityFilter === 'all' || q.priority === qaPriorityFilter)
-                      .map((question) => (
+                    {studentQuestions.map((question) => (
                         <div 
                           key={question.id} 
                           className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -3950,6 +4813,33 @@ const AdminDashboard = () => {
                               >
                                 <Send className="w-4 h-4 mr-1" />
                                 Answer
+                              </Button>
+                            )}
+                            {question.status === 'answered' && (
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={async () => {
+                                  try {
+                                    await qaService.deleteQuestion(question.id!);
+                                    // Refresh questions
+                                    const questions = await qaService.getAllQuestions();
+                                    setStudentQuestions(questions);
+                                    toast({
+                                      title: "Question Deleted",
+                                      description: "Answered question has been deleted successfully"
+                                    });
+                                  } catch (error) {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to delete question",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Delete
                               </Button>
                             )}
                             <Button 
@@ -4070,6 +4960,18 @@ const AdminDashboard = () => {
                               userData?.name || 'Admin'
                             );
                             
+                            // Additional explicit notification to ensure student gets notified
+                            await notificationsService.createNotification({
+                              user_uid: selectedQuestionForAnswer.student_uid,
+                              type: 'general',
+                              title: '✅ Your Question Has Been Answered',
+                              message: `Admin has responded to your question: "${selectedQuestionForAnswer.question_text.substring(0, 50)}...". Check the Q&A section for the full response.`,
+                              date: new Date().toISOString(),
+                              read: false,
+                              action_required: true,
+                              priority: 'high'
+                            });
+                            
                             // Refresh questions
                             const questions = await qaService.getAllQuestions();
                             setStudentQuestions(questions);
@@ -4079,8 +4981,8 @@ const AdminDashboard = () => {
                             setSelectedQuestionForAnswer(null);
                             
                             toast({
-                              title: "Answer Sent",
-                              description: "Your response has been sent to the student"
+                              title: "Answer Submitted",
+                              description: "Your answer has been sent to the student and they have been notified."
                             });
                           } catch (error) {
                             toast({
