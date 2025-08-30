@@ -9,8 +9,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useSubmissions, useAssignments, useNotifications } from '../../hooks/useFirebase';
 import { 
   assignmentsService,
+  scheduleService,
+  examCooldownService,
   type Assignment,
-  type Notification
+  type Notification,
+  type ScheduledAssignment,
+  type StreakCalculation
 } from '../../lib/firebase/index';
 import { 
   Flame, 
@@ -54,9 +58,15 @@ const StudentDashboard = () => {
   const { assignments, loading: assignmentsLoading } = useAssignments();
   const { notifications } = useNotifications();
 
-  // State for current question
-  const [todayAssignment, setTodayAssignment] = useState<Assignment | null>(null);
-  const [selectedDateAssignment, setSelectedDateAssignment] = useState<Assignment | null>(null);
+  // State for current question and enhanced scheduling
+  const [todayAssignment, setTodayAssignment] = useState<ScheduledAssignment | null>(null);
+  const [selectedDateAssignment, setSelectedDateAssignment] = useState<ScheduledAssignment | null>(null);
+  const [canSubmitToday, setCanSubmitToday] = useState(false);
+  const [submitReason, setSubmitReason] = useState<string>('');
+  const [enhancedStreak, setEnhancedStreak] = useState<StreakCalculation | null>(null);
+  const [assignmentCalendar, setAssignmentCalendar] = useState<any>({});
+  const [examSettings, setExamSettings] = useState<any>(null);
+  const [isCurrentlyInExam, setIsCurrentlyInExam] = useState(false);
   
   // Get time-based greeting
   const getGreeting = () => {
@@ -75,24 +85,50 @@ const StudentDashboard = () => {
   // Exam cooldown state
   const [isExamCooldown, setIsExamCooldown] = useState(false);
 
-  // Load today's assignment
+  // Load today's assignment and submission status using enhanced scheduling
   useEffect(() => {
-    const loadTodayAssignment = async () => {
+    const loadTodayData = async () => {
+      if (!currentUser) return;
+      
       try {
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-        console.log('Loading assignment for date:', todayStr);
+        // Get exam settings first
+        const examData = await examCooldownService.getExamCooldown();
+        console.log('Exam settings loaded:', examData);
+        setExamSettings(examData);
         
-        const assignment = await assignmentsService.getAssignment(todayStr);
-        console.log('Assignment loaded:', assignment);
-        setTodayAssignment(assignment);
+        // Check if currently in exam period
+        const isInExamPeriod = examData ? examCooldownService.isExamPeriod(examData) : false;
+        console.log('Currently in exam period:', isInExamPeriod);
+        setIsCurrentlyInExam(isInExamPeriod);
+        
+        // Get today's assignment using schedule service
+        const todaysAssignment = await scheduleService.getTodaysAssignment();
+        console.log('Enhanced today\'s assignment:', todaysAssignment);
+        setTodayAssignment(todaysAssignment);
+        
+        // Check if student can submit today
+        const submitCheck = await scheduleService.canSubmitToday(currentUser.uid);
+        console.log('Can submit today:', submitCheck);
+        setCanSubmitToday(submitCheck.canSubmit);
+        setSubmitReason(submitCheck.reason || '');
+        
+        // Calculate enhanced streak
+        const streakData = await scheduleService.calculateEnhancedStreak(currentUser.uid);
+        console.log('Enhanced streak:', streakData);
+        setEnhancedStreak(streakData);
+        
+        // Get assignment calendar
+        const calendar = await scheduleService.getAssignmentCalendar(currentUser.uid);
+        console.log('Assignment calendar:', calendar);
+        setAssignmentCalendar(calendar);
+        
       } catch (error) {
-        console.error('Error loading today\'s assignment:', error);
+        console.error('Error loading today\'s data:', error);
       }
     };
 
-    loadTodayAssignment();
-  }, []);
+    loadTodayData();
+  }, [currentUser]);
 
   // Load assignment for selected date
   useEffect(() => {
@@ -102,9 +138,14 @@ const StudentDashboard = () => {
           const selectedDateStr = selectedDate.toISOString().split('T')[0]; // YYYY-MM-DD format
           console.log('Loading assignment for selected date:', selectedDateStr);
           
-          const assignment = await assignmentsService.getAssignment(selectedDateStr);
-          console.log('Selected date assignment loaded:', assignment);
-          setSelectedDateAssignment(assignment);
+          // Check if this date has a scheduled assignment
+          const visibleAssignments = await scheduleService.getVisibleAssignments();
+          const dateAssignment = visibleAssignments.find(
+            assignment => assignment.date === selectedDateStr
+          );
+          
+          console.log('Selected date assignment loaded:', dateAssignment);
+          setSelectedDateAssignment(dateAssignment || null);
         } catch (error) {
           console.error('Error loading selected date assignment:', error);
           setSelectedDateAssignment(null);
@@ -154,19 +195,34 @@ const StudentDashboard = () => {
     return latestSubmission.adminReview?.status || 'pending';
   };
 
-  const canSubmitToday = () => {
-    const status = getTodaySubmissionStatus();
-    return status === 'none' || status === 'rejected';
+  const canSubmitTodayCheck = () => {
+    return canSubmitToday;
+  };
+
+  const getSubmissionMessage = () => {
+    if (!canSubmitToday) {
+      switch (submitReason) {
+        case 'exam_period':
+          return 'Submissions are paused during exam period';
+        case 'no_assignment_scheduled':
+          return 'No assignment scheduled for today';
+        case 'already_completed':
+          return 'You have already completed today\'s submission';
+        default:
+          return 'Cannot submit today';
+      }
+    }
+    return '';
   };
 
   // Track if today's submission is done
   const isSubmissionDone = getTodaySubmissionStatus() === 'approved';
 
   const handleSubmission = async (difficulty: string) => {
-    if (!canSubmitToday()) {
+    if (!canSubmitTodayCheck()) {
       toast({
         title: "Cannot Submit",
-        description: "You have already completed today's submission.",
+        description: getSubmissionMessage(),
         variant: "destructive",
       });
       return;
@@ -174,46 +230,17 @@ const StudentDashboard = () => {
 
     try {
       // If we have today's assignment, use it
-      if (todayAssignment) {
-        const question = todayAssignment[`${difficulty}_question` as keyof Assignment] as any;
+      if (todayAssignment && todayAssignment.isActive) {
+        const question = todayAssignment[`${difficulty}_question` as keyof ScheduledAssignment] as any;
         setSelectedQuestion({ ...question, difficulty });
         setShowSubmissionModal(true);
       } else {
-        // Use demo questions when no assignment is available
-        const demoQuestions = {
-          easy: {
-            title: "Two Sum",
-            description: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
-            link: "https://leetcode.com/problems/two-sum/",
-            tags: ["Array", "Hash Table"],
-            difficulty: "easy"
-          },
-          medium: {
-            title: "Add Two Numbers", 
-            description: "You are given two non-empty linked lists representing two non-negative integers stored in reverse order.",
-            link: "https://leetcode.com/problems/add-two-numbers/",
-            tags: ["Linked List", "Math", "Recursion"],
-            difficulty: "medium"
-          },
-          hard: {
-            title: "Median of Two Sorted Arrays",
-            description: "Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.",
-            link: "https://leetcode.com/problems/median-of-two-sorted-arrays/",
-            tags: ["Array", "Binary Search", "Divide and Conquer"],
-            difficulty: "hard"
-          },
-          choice: {
-            title: "Your Choice Problem",
-            description: "Submit solutions for any coding problem of your choice",
-            link: "",
-            tags: ["Custom Problem"],
-            difficulty: "choice"
-          }
-        };
-        
-        const question = demoQuestions[difficulty as keyof typeof demoQuestions];
-        setSelectedQuestion({ ...question, difficulty });
-        setShowSubmissionModal(true);
+        // Show message about no active assignment
+        toast({
+          title: "No Active Assignment",
+          description: "There is no active assignment for today. Please check with your admin.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error handling submission:', error);
@@ -325,10 +352,13 @@ const StudentDashboard = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Streak Badge */}
+              {/* Streak Badge - Use enhanced streak if available */}
               <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium">
                 <Flame className="w-4 h-4" />
-                <span>{userData.streak_count} Day Streak</span>
+                <span>{enhancedStreak?.currentStreak ?? userData.streak_count} Day Streak</span>
+                {enhancedStreak && !enhancedStreak.isStreakActive && enhancedStreak.streakBreakReason === 'exam_period' && (
+                  <span className="text-xs opacity-80">(Paused)</span>
+                )}
               </div>
 
               {/* GitHub Repo */}
@@ -391,12 +421,12 @@ const StudentDashboard = () => {
         </div>
       </header>
 
-      {/* Exam Cooldown Banner */}
-      {isExamCooldown && (
+      {/* Exam Cooldown Banner - Dynamic message from admin */}
+      {isCurrentlyInExam && examSettings && (
         <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4">
           <div className="container mx-auto flex items-center justify-center gap-2">
             <span className="text-lg">📚</span>
-            <span className="font-medium">All The Best For Your Exams! Your streak is paused during this period.</span>
+            <span className="font-medium">{examSettings.message}</span>
           </div>
         </div>
       )}
@@ -456,7 +486,10 @@ const StudentDashboard = () => {
             </div>
             <div className="text-xl font-bold text-success flex items-center">
               <Flame className="w-4 h-4 mr-1" />
-              {userData.streak_count}
+              {enhancedStreak?.currentStreak ?? userData.streak_count}
+              {enhancedStreak && !enhancedStreak.isStreakActive && enhancedStreak.streakBreakReason === 'exam_period' && (
+                <span className="text-xs text-muted-foreground ml-1">(Paused)</span>
+              )}
             </div>
           </div>
           <div className="p-3 rounded-lg border bg-card">
@@ -502,18 +535,34 @@ const StudentDashboard = () => {
                     const completed: Date[] = [];
                     const missed: Date[] = [];
                     const paused: Date[] = [];
-                    Object.entries(userData.calendar || {}).forEach(([iso, status]) => {
-                      const d = new Date(iso);
-                      if (status === 'completed') completed.push(d);
-                      if (status === 'missed') missed.push(d);
-                      if (status === 'paused') paused.push(d);
-                    });
-                    return { completed, missed, paused } as any;
+                    const scheduled: Date[] = [];
+                    
+                    // Use enhanced calendar data if available
+                    if (Object.keys(assignmentCalendar).length > 0) {
+                      Object.entries(assignmentCalendar).forEach(([dateStr, info]: [string, any]) => {
+                        const d = new Date(dateStr);
+                        if (info.status === 'completed') completed.push(d);
+                        else if (info.status === 'missed') missed.push(d);
+                        else if (info.status === 'exam') paused.push(d);
+                        else if (info.status === 'scheduled') scheduled.push(d);
+                      });
+                    } else {
+                      // Fallback to user calendar data
+                      Object.entries(userData.calendar || {}).forEach(([iso, status]) => {
+                        const d = new Date(iso);
+                        if (status === 'completed') completed.push(d);
+                        if (status === 'missed') missed.push(d);
+                        if (status === 'paused') paused.push(d);
+                      });
+                    }
+                    
+                    return { completed, missed, paused, scheduled } as any;
                   })()}
                   modifiersClassNames={{
                     completed: 'bg-green-500 text-white hover:bg-green-600 font-semibold',
                     missed: 'bg-red-500 text-white hover:bg-red-600 font-semibold',
-                    paused: 'bg-pink-500 text-white hover:bg-pink-600 font-semibold'
+                    paused: 'bg-blue-500 text-white hover:bg-blue-600 font-semibold',
+                    scheduled: 'bg-amber-500 text-white hover:bg-amber-600 font-semibold'
                   }}
                 />
               </CardContent>
@@ -567,15 +616,40 @@ const StudentDashboard = () => {
                   variant="outline" 
                   size="sm"
                   onClick={async () => {
-                    const today = new Date();
-                    const todayStr = today.toISOString().split('T')[0];
-                    console.log('Refreshing assignment for date:', todayStr);
-                    const assignment = await assignmentsService.getAssignment(todayStr);
-                    console.log('Refreshed assignment:', assignment);
-                    setTodayAssignment(assignment);
+                    if (!currentUser) return;
+                    
+                    console.log('Refreshing enhanced assignment data...');
+                    
+                    // Refresh exam settings
+                    const examData = await examCooldownService.getExamCooldown();
+                    const isInExamPeriod = examData ? examCooldownService.isExamPeriod(examData) : false;
+                    setExamSettings(examData);
+                    setIsCurrentlyInExam(isInExamPeriod);
+                    
+                    // Refresh all enhanced data
+                    const todaysAssignment = await scheduleService.getTodaysAssignment();
+                    const submitCheck = await scheduleService.canSubmitToday(currentUser.uid);
+                    const streakData = await scheduleService.calculateEnhancedStreak(currentUser.uid);
+                    const calendar = await scheduleService.getAssignmentCalendar(currentUser.uid);
+                    
+                    setTodayAssignment(todaysAssignment);
+                    setCanSubmitToday(submitCheck.canSubmit);
+                    setSubmitReason(submitCheck.reason || '');
+                    setEnhancedStreak(streakData);
+                    setAssignmentCalendar(calendar);
+                    
+                    console.log('Enhanced data refreshed:', {
+                      examData,
+                      isInExamPeriod,
+                      todaysAssignment,
+                      submitCheck,
+                      streakData,
+                      calendar
+                    });
+                    
                     toast({
                       title: "Refreshed",
-                      description: "Assignment data has been refreshed"
+                      description: "Assignment data has been refreshed with enhanced scheduling"
                     });
                   }}
                   className="flex items-center gap-1"
@@ -592,7 +666,25 @@ const StudentDashboard = () => {
                     Loading today's assignments...
                   </div>
                 </div>
-              ) : todayAssignment ? (
+              ) : isCurrentlyInExam ? (
+                // Show exam period message
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                  <div className="flex items-center gap-3 text-blue-800">
+                    <GraduationCap className="w-6 h-6" />
+                    <div>
+                      <h3 className="font-semibold text-lg">Exam Period Active</h3>
+                      <p className="text-blue-700 mt-1">
+                        {examSettings?.message || "Exam period is currently active. Submissions are paused."}
+                      </p>
+                      {examSettings?.start_date && examSettings?.end_date && (
+                        <p className="text-sm text-blue-600 mt-2">
+                          Period: {new Date(examSettings.start_date).toLocaleDateString()} - {new Date(examSettings.end_date).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : todayAssignment && todayAssignment.isActive ? (
                 <>
                   {/* Easy Question */}
                   <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
@@ -618,7 +710,7 @@ const StudentDashboard = () => {
                             variant="default"
                             size="sm"
                             onClick={() => handleSubmission('easy')}
-                            disabled={userData.disqualified || !canSubmitToday()}
+                            disabled={userData.disqualified || !canSubmitTodayCheck()}
                             className="flex items-center gap-1"
                           >
                             <Code className="w-3.5 h-3.5" />
@@ -665,7 +757,7 @@ const StudentDashboard = () => {
                             variant="default"
                             size="sm"
                             onClick={() => handleSubmission('medium')}
-                            disabled={userData.disqualified || !canSubmitToday()}
+                            disabled={userData.disqualified || !canSubmitTodayCheck()}
                             className="flex items-center gap-1"
                           >
                             <Code className="w-3.5 h-3.5" />
@@ -712,7 +804,7 @@ const StudentDashboard = () => {
                             variant="default"
                             size="sm"
                             onClick={() => handleSubmission('hard')}
-                            disabled={userData.disqualified || !canSubmitToday()}
+                            disabled={userData.disqualified || !canSubmitTodayCheck()}
                             className="flex items-center gap-1"
                           >
                             <Code className="w-3.5 h-3.5" />
@@ -737,147 +829,18 @@ const StudentDashboard = () => {
                 </>
               ) : (
                 <div className="space-y-4">
-                  {/* Demo Notice */}
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2 text-amber-800">
-                      <Info className="w-4 h-4" />
-                      <span className="font-medium">Demo Questions</span>
-                    </div>
-                    <p className="text-sm text-amber-700 mt-1">
-                      No assignment found for today ({new Date().toISOString().split('T')[0]}). Showing demo questions. Contact your admin to create today's assignment.
-                    </p>
-                  </div>
-
-                  {/* Demo Assignment for Day 1 */}
-                  <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex flex-col space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-green-500 hover:bg-green-600 text-white">
-                            Easy
-                          </Badge>
-                          <h3 className="text-lg font-medium">Two Sum</h3>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => window.open('https://leetcode.com/problems/two-sum/', '_blank')}
-                            className="flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>Problem</span>
-                          </Button>
-                          <Button 
-                            variant="default"
-                            size="sm"
-                            onClick={() => handleSubmission('easy')}
-                            disabled={userData.disqualified || !canSubmitToday()}
-                            className="flex items-center gap-1"
-                          >
-                            <Code className="w-3.5 h-3.5" />
-                            <span>{getTodaySubmissionStatus() === 'approved' ? 'Completed' : 'Solve'}</span>
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <p className="text-sm text-muted-foreground">
-                        Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
-                      </p>
-                      
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Badge variant="outline" className="text-xs">Array</Badge>
-                        <Badge variant="outline" className="text-xs">Hash Table</Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Medium Question */}
-                  <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex flex-col space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">
-                            Medium
-                          </Badge>
-                          <h3 className="text-lg font-medium">Add Two Numbers</h3>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => window.open('https://leetcode.com/problems/add-two-numbers/', '_blank')}
-                            className="flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>Problem</span>
-                          </Button>
-                          <Button 
-                            variant="default"
-                            size="sm"
-                            onClick={() => handleSubmission('medium')}
-                            disabled={userData.disqualified || !canSubmitToday()}
-                            className="flex items-center gap-1"
-                          >
-                            <Code className="w-3.5 h-3.5" />
-                            <span>{getTodaySubmissionStatus() === 'approved' ? 'Completed' : 'Solve'}</span>
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <p className="text-sm text-muted-foreground">
-                        You are given two non-empty linked lists representing two non-negative integers stored in reverse order.
-                      </p>
-                      
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Badge variant="outline" className="text-xs">Linked List</Badge>
-                        <Badge variant="outline" className="text-xs">Math</Badge>
-                        <Badge variant="outline" className="text-xs">Recursion</Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Hard Question */}
-                  <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex flex-col space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-red-500 hover:bg-red-600 text-white">
-                            Hard
-                          </Badge>
-                          <h3 className="text-lg font-medium">Median of Two Sorted Arrays</h3>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => window.open('https://leetcode.com/problems/median-of-two-sorted-arrays/', '_blank')}
-                            className="flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>Problem</span>
-                          </Button>
-                          <Button 
-                            variant="default"
-                            size="sm"
-                            onClick={() => handleSubmission('hard')}
-                            disabled={userData.disqualified || !canSubmitToday()}
-                            className="flex items-center gap-1"
-                          >
-                            <Code className="w-3.5 h-3.5" />
-                            <span>{getTodaySubmissionStatus() === 'approved' ? 'Completed' : 'Solve'}</span>
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <p className="text-sm text-muted-foreground">
-                        Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.
-                      </p>
-                      
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Badge variant="outline" className="text-xs">Array</Badge>
-                        <Badge variant="outline" className="text-xs">Binary Search</Badge>
-                        <Badge variant="outline" className="text-xs">Divide and Conquer</Badge>
+                  {/* No Assignment Notice */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                    <div className="flex items-center gap-3 text-gray-800">
+                      <Calendar className="w-6 h-6" />
+                      <div>
+                        <h3 className="font-semibold text-lg">No Assignment for Today</h3>
+                        <p className="text-gray-700 mt-1">
+                          No questions have been assigned for today ({new Date().toLocaleDateString()}). 
+                        </p>
+                        <p className="text-sm text-gray-600 mt-2">
+                          Please check back later or contact your instructor if you believe this is an error.
+                        </p>
                       </div>
                     </div>
                   </div>

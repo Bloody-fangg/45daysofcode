@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/button';
@@ -7,7 +7,8 @@ import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, User, Mail, Lock, GraduationCap, Github, Hash, BookOpen } from 'lucide-react';
+import { Eye, EyeOff, User, Mail, Lock, GraduationCap, Github, Hash, BookOpen, AlertTriangle } from 'lucide-react';
+import { registrationService, usersService, type RegistrationSettings } from '../../lib/firebase/index';
 
 const SignupPage = () => {
   const [formData, setFormData] = useState({
@@ -22,9 +23,41 @@ const SignupPage = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [registrationAllowed, setRegistrationAllowed] = useState(true);
+  const [registrationMessage, setRegistrationMessage] = useState('');
+  const [checkingRegistration, setCheckingRegistration] = useState(true);
   
   const { signup } = useAuth();
   const { toast } = useToast();
+
+  // Check if registration is allowed
+  useEffect(() => {
+    const checkRegistrationStatus = async () => {
+      try {
+        setCheckingRegistration(true);
+        
+        // Get current user count
+        const users = await usersService.getAllUsers();
+        const userCount = users.filter(user => !user.isAdmin).length;
+        
+        // Check registration permission
+        const permission = await registrationService.canRegister(userCount);
+        
+        setRegistrationAllowed(permission.allowed);
+        if (!permission.allowed && permission.reason) {
+          setRegistrationMessage(permission.reason);
+        }
+      } catch (error) {
+        console.error('Error checking registration status:', error);
+        setRegistrationAllowed(false);
+        setRegistrationMessage('Unable to verify registration status. Please try again later.');
+      } finally {
+        setCheckingRegistration(false);
+      }
+    };
+
+    checkRegistrationStatus();
+  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -35,6 +68,16 @@ const SignupPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if registration is allowed
+    if (!registrationAllowed) {
+      toast({
+        variant: "destructive",
+        title: "Registration Closed",
+        description: registrationMessage || "Registration is currently not allowed"
+      });
+      return;
+    }
     
     // Validation
     const requiredFields = ['name', 'enrollmentNo', 'email', 'password', 'course', 'section', 'semester'];
@@ -149,7 +192,36 @@ const SignupPage = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Registration Status Check */}
+                {checkingRegistration && (
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700"></div>
+                      <span className="text-sm">Checking registration availability...</span>
+                    </div>
+                  </div>
+                )}
+                
+                {!checkingRegistration && !registrationAllowed && (
+                  <div className="mb-6 p-6 bg-red-50 border border-red-200 rounded-lg text-center">
+                    <div className="flex flex-col items-center gap-3 text-red-700">
+                      <AlertTriangle className="w-8 h-8" />
+                      <div>
+                        <div className="font-semibold text-lg">Registration Currently Closed</div>
+                        <div className="text-sm mt-1">{registrationMessage}</div>
+                      </div>
+                      <Link 
+                        to="/login" 
+                        className="mt-2 inline-flex items-center px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-md transition-colors"
+                      >
+                        Back to Login
+                      </Link>
+                    </div>
+                  </div>
+                )}
+
+                {!checkingRegistration && registrationAllowed && (
+                  <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Name */}
                     <div className="space-y-2">
@@ -316,6 +388,7 @@ const SignupPage = () => {
                     {loading ? "Creating Account..." : "Start My Coding Journey 🚀"}
                   </Button>
                 </form>
+                )}
 
                 <div className="mt-6 text-center">
                   <p className="text-muted-foreground">

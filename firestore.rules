@@ -82,6 +82,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
+    // System settings collection (includes registration settings)
+    match /system_settings/{document} {
+      // Anyone authenticated can read system settings
+      allow read: if isAuthenticated();
+      
+      // Only admins can modify system settings
+      allow write: if isAdmin();
+    }
+    
     // Analytics collection (admin only)
     match /analytics/{document} {
       allow read, write: if isAdmin();
